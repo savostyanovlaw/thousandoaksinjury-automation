@@ -25,23 +25,7 @@
               "leftValue": "={{ $json['status'] }}",
               "rightValue": "",
               "operator": { "type": "string", "operation": "equals" }
-            }
-          ],
-          "combinator": "or"
-        },
-        "options": {}
-      },
-      "id": "a-2",
-      "name": "Filter - Blank Status",
-      "type": "n8n-nodes-base.filter",
-      "typeVersion": 2,
-      "position": [440, 180]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": { "caseSensitive": true, "typeValidation": "strict" },
-          "conditions": [
+            },
             {
               "id": "cond-pending",
               "leftValue": "={{ $json['status'] }}",
@@ -49,44 +33,32 @@
               "operator": { "type": "string", "operation": "equals" }
             }
           ],
-          "combinator": "and"
+          "combinator": "or"
         },
         "options": {}
       },
-      "id": "a-3",
-      "name": "Filter - Pending Status",
+      "id": "a-2",
+      "name": "Filter - Blank or Pending",
       "type": "n8n-nodes-base.filter",
       "typeVersion": 2,
-      "position": [440, 420]
-    },
-    {
-      "parameters": {
-        "mode": "combine",
-        "combinationMode": "multiplex",
-        "options": {}
-      },
-      "id": "a-4",
-      "name": "Merge - Blank and Pending",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
-      "position": [660, 300]
+      "position": [460, 300]
     },
     {
       "parameters": {
         "assignments": {
           "assignments": [
-            { "id": "a-ctx-1", "name": "ctx_id",     "value": "={{ $json['id'] }}",     "type": "string" },
-            { "id": "a-ctx-2", "name": "ctx_title",  "value": "={{ $json['title'] }}",  "type": "string" },
-            { "id": "a-ctx-3", "name": "ctx_script", "value": "={{ $json['script'] }}", "type": "string" }
+            { "id": "ctx-1", "name": "ctx_id",     "value": "={{ $json['id'] }}",     "type": "string" },
+            { "id": "ctx-2", "name": "ctx_title",  "value": "={{ $json['title'] }}",  "type": "string" },
+            { "id": "ctx-3", "name": "ctx_script", "value": "={{ $json['script'] }}", "type": "string" }
           ]
         },
         "options": {}
       },
-      "id": "a-5",
+      "id": "a-3",
       "name": "Save Row Context",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [880, 300]
+      "position": [680, 300]
     },
     {
       "parameters": {
@@ -97,14 +69,14 @@
         "options": {},
         "onError": "continueRegularOutput"
       },
-      "id": "a-6",
-      "name": "HeyGen - Get My Avatar",
+      "id": "a-4",
+      "name": "HeyGen - Get Avatar",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1100, 300],
+      "position": [900, 300],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "REPLACE_WITH_HEYGEN_CREDENTIAL_ID",
+          "id": "",
           "name": "HeyGen API Key"
         }
       }
@@ -115,30 +87,261 @@
         "combinationMode": "mergeByPosition",
         "options": {}
       },
-      "id": "a-7",
-      "name": "Merge - Avatar into Context",
+      "id": "a-5",
+      "name": "Merge - Context + Avatar",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
-      "position": [1320, 300]
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "id": "cond-avatar-found",
+                    "leftValue": "={{ $json.input1.data.avatars[0].avatar_id }}",
+                    "rightValue": "",
+                    "operator": { "type": "string", "operation": "notEquals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "avatar_found"
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "id": "a-6",
+      "name": "Switch - Avatar Found?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "value": "1rFsEvJqvi5thhNVtMaAqTEgDSDzOobU7ZUHpLU3Vog8", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Sheet1", "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id":              "={{ $json.input2.ctx_id }}",
+            "status":          "failed",
+            "failure_message": "No HeyGen avatar found.",
+            "failure_code":    "NO_AVATAR"
+          },
+          "matchingColumns": ["id"],
+          "schema": [
+            { "id": "id",              "displayName": "id",              "required": false, "defaultMatch": true,  "display": true, "type": "string", "canBeUsedToMatch": true  },
+            { "id": "status",          "displayName": "status",          "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "failure_message", "displayName": "failure_message", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "failure_code",    "displayName": "failure_code",    "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a-7",
+      "name": "Update Sheet - No Avatar",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [1560, 480]
     },
     {
       "parameters": {
         "assignments": {
           "assignments": [
-            { "id": "enrich-1", "name": "ctx_id",        "value": "={{ $json.input2.ctx_id }}",                                                "type": "string" },
-            { "id": "enrich-2", "name": "ctx_title",     "value": "={{ $json.input2.ctx_title }}",                                             "type": "string" },
-            { "id": "enrich-3", "name": "ctx_script",    "value": "={{ $json.input2.ctx_script }}",                                            "type": "string" },
-            { "id": "enrich-4", "name": "ctx_avatar_id", "value": "={{ $json.input1.data.avatars[0].avatar_id }}",                             "type": "string" },
-            { "id": "enrich-5", "name": "ctx_voice_id",  "value": "={{ $json.input1.data.avatars[0].default_voice_id ?? $json.input1.data.avatars[0].voice_id }}", "type": "string" }
+            { "id": "enrich-1", "name": "ctx_id",             "value": "={{ $json.input2.ctx_id }}",                              "type": "string" },
+            { "id": "enrich-2", "name": "ctx_title",          "value": "={{ $json.input2.ctx_title }}",                           "type": "string" },
+            { "id": "enrich-3", "name": "ctx_script",         "value": "={{ $json.input2.ctx_script }}",                          "type": "string" },
+            { "id": "enrich-4", "name": "ctx_avatar_id",      "value": "={{ $json.input1.data.avatars[0].avatar_id }}",            "type": "string" },
+            { "id": "enrich-5", "name": "ctx_default_voice",  "value": "={{ $json.input1.data.avatars[0].default_voice_id ?? '' }}","type": "string" }
           ]
         },
         "options": {}
       },
       "id": "a-8",
-      "name": "Set Avatar and Voice IDs",
+      "name": "Set Avatar Context",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [1540, 300]
+      "position": [1560, 160]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "id": "cond-has-default-voice",
+                    "leftValue": "={{ $json.ctx_default_voice }}",
+                    "rightValue": "",
+                    "operator": { "type": "string", "operation": "notEquals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "has_voice"
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "id": "a-9",
+      "name": "Switch - Has Default Voice?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1780, 160]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.heygen.com/v2/voices?limit=1",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "options": {},
+        "onError": "continueRegularOutput"
+      },
+      "id": "a-10",
+      "name": "HeyGen - Get Voices",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "HeyGen API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "a-11",
+      "name": "Merge - Context + Voices",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [2220, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "voice-1", "name": "ctx_id",        "value": "={{ $json.input2.ctx_id }}",                  "type": "string" },
+            { "id": "voice-2", "name": "ctx_title",     "value": "={{ $json.input2.ctx_title }}",               "type": "string" },
+            { "id": "voice-3", "name": "ctx_script",    "value": "={{ $json.input2.ctx_script }}",              "type": "string" },
+            { "id": "voice-4", "name": "ctx_avatar_id", "value": "={{ $json.input2.ctx_avatar_id }}",           "type": "string" },
+            { "id": "voice-5", "name": "ctx_voice_id",  "value": "={{ $json.input1.data.voices[0].voice_id }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a-12",
+      "name": "Set Voice From API",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2440, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "id": "cond-voice-found",
+                    "leftValue": "={{ $json.ctx_voice_id }}",
+                    "rightValue": "",
+                    "operator": { "type": "string", "operation": "notEquals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "voice_found"
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "id": "a-13",
+      "name": "Switch - Voice Found?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [2660, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "value": "1rFsEvJqvi5thhNVtMaAqTEgDSDzOobU7ZUHpLU3Vog8", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Sheet1", "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id":              "={{ $json.ctx_id }}",
+            "status":          "failed",
+            "failure_message": "No HeyGen voice found.",
+            "failure_code":    "NO_VOICE"
+          },
+          "matchingColumns": ["id"],
+          "schema": [
+            { "id": "id",              "displayName": "id",              "required": false, "defaultMatch": true,  "display": true, "type": "string", "canBeUsedToMatch": true  },
+            { "id": "status",          "displayName": "status",          "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "failure_message", "displayName": "failure_message", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "failure_code",    "displayName": "failure_code",    "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a-14",
+      "name": "Update Sheet - No Voice",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [2880, 480]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "dv-1", "name": "ctx_id",        "value": "={{ $json.ctx_id }}",        "type": "string" },
+            { "id": "dv-2", "name": "ctx_title",     "value": "={{ $json.ctx_title }}",     "type": "string" },
+            { "id": "dv-3", "name": "ctx_script",    "value": "={{ $json.ctx_script }}",    "type": "string" },
+            { "id": "dv-4", "name": "ctx_avatar_id", "value": "={{ $json.ctx_avatar_id }}", "type": "string" },
+            { "id": "dv-5", "name": "ctx_voice_id",  "value": "={{ $json.ctx_default_voice }}","type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a-15",
+      "name": "Use Default Voice",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2000, 60]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "multiplex",
+        "options": {}
+      },
+      "id": "a-16",
+      "name": "Merge - Ready to Create",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [2880, 160]
     },
     {
       "parameters": {
@@ -152,14 +355,14 @@
         "options": {},
         "onError": "continueRegularOutput"
       },
-      "id": "a-9",
+      "id": "a-17",
       "name": "HeyGen POST v3 Create Video",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1760, 300],
+      "position": [3100, 160],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "REPLACE_WITH_HEYGEN_CREDENTIAL_ID",
+          "id": "",
           "name": "HeyGen API Key"
         }
       }
@@ -170,11 +373,11 @@
         "combinationMode": "mergeByPosition",
         "options": {}
       },
-      "id": "a-10",
-      "name": "Merge - Restore Row Context",
+      "id": "a-18",
+      "name": "Merge - Restore Final Context",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
-      "position": [1980, 300]
+      "position": [3320, 160]
     },
     {
       "parameters": {
@@ -200,11 +403,11 @@
         },
         "options": { "fallbackOutput": "extra" }
       },
-      "id": "a-11",
+      "id": "a-19",
       "name": "Switch - Created or Failed",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3,
-      "position": [2200, 300]
+      "position": [3540, 160]
     },
     {
       "parameters": {
@@ -237,11 +440,11 @@
         },
         "options": {}
       },
-      "id": "a-12",
+      "id": "a-20",
       "name": "Update Sheet - Set Processing",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.4,
-      "position": [2420, 160]
+      "position": [3760, 60]
     },
     {
       "parameters": {
@@ -254,16 +457,11 @@
             "id":              "={{ $json.input2.ctx_id }}",
             "status":          "failed",
             "failure_message": "={{ $json.input1.error?.message ?? $json.input1.message ?? 'HeyGen create error' }}",
-            "failure_code":    "={{ $json.input1.error?.code ?? $json.input1.code ?? '' }}"
+            "failure_code":    "={{ $json.input1.error?.code ?? $json.input1.code ?? 'CREATE_ERROR' }}"
           },
           "matchingColumns": ["id"],
           "schema": [
             { "id": "id",              "displayName": "id",              "required": false, "defaultMatch": true,  "display": true, "type": "string", "canBeUsedToMatch": true  },
-            { "id": "title",           "displayName": "title",           "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
-            { "id": "script",          "displayName": "script",          "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
-            { "id": "video_id",        "displayName": "video_id",        "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
-            { "id": "video_url",       "displayName": "video_url",       "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
-            { "id": "video_page_url",  "displayName": "video_page_url",  "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
             { "id": "status",          "displayName": "status",          "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
             { "id": "failure_message", "displayName": "failure_message", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
             { "id": "failure_code",    "displayName": "failure_code",    "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false }
@@ -271,39 +469,58 @@
         },
         "options": {}
       },
-      "id": "a-13",
+      "id": "a-21",
       "name": "Update Sheet - Create Failed",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.4,
-      "position": [2420, 440]
+      "position": [3760, 280]
     }
   ],
   "connections": {
-    "Google Sheets Trigger": {
-      "main": [[
-        { "node": "Filter - Blank Status",   "type": "main", "index": 0 },
-        { "node": "Filter - Pending Status", "type": "main", "index": 0 }
-      ]]
-    },
-    "Filter - Blank Status":   { "main": [[{ "node": "Merge - Blank and Pending", "type": "main", "index": 0 }]] },
-    "Filter - Pending Status": { "main": [[{ "node": "Merge - Blank and Pending", "type": "main", "index": 1 }]] },
-    "Merge - Blank and Pending": { "main": [[{ "node": "Save Row Context", "type": "main", "index": 0 }]] },
+    "Google Sheets Trigger":    { "main": [[{ "node": "Filter - Blank or Pending", "type": "main", "index": 0 }]] },
+    "Filter - Blank or Pending":{ "main": [[{ "node": "Save Row Context",          "type": "main", "index": 0 }]] },
     "Save Row Context": {
       "main": [[
-        { "node": "HeyGen - Get My Avatar",      "type": "main", "index": 0 },
-        { "node": "Merge - Avatar into Context", "type": "main", "index": 1 }
+        { "node": "HeyGen - Get Avatar",      "type": "main", "index": 0 },
+        { "node": "Merge - Context + Avatar", "type": "main", "index": 1 }
       ]]
     },
-    "HeyGen - Get My Avatar": { "main": [[{ "node": "Merge - Avatar into Context", "type": "main", "index": 0 }]] },
-    "Merge - Avatar into Context": { "main": [[{ "node": "Set Avatar and Voice IDs", "type": "main", "index": 0 }]] },
-    "Set Avatar and Voice IDs": {
+    "HeyGen - Get Avatar":        { "main": [[{ "node": "Merge - Context + Avatar",    "type": "main", "index": 0 }]] },
+    "Merge - Context + Avatar":   { "main": [[{ "node": "Switch - Avatar Found?",       "type": "main", "index": 0 }]] },
+    "Switch - Avatar Found?": {
+      "main": [
+        [{ "node": "Set Avatar Context",    "type": "main", "index": 0 }],
+        [{ "node": "Update Sheet - No Avatar", "type": "main", "index": 0 }]
+      ]
+    },
+    "Set Avatar Context":          { "main": [[{ "node": "Switch - Has Default Voice?", "type": "main", "index": 0 }]] },
+    "Switch - Has Default Voice?": {
+      "main": [
+        [{ "node": "Use Default Voice", "type": "main", "index": 0 }],
+        [
+          { "node": "HeyGen - Get Voices",      "type": "main", "index": 0 },
+          { "node": "Merge - Context + Voices", "type": "main", "index": 1 }
+        ]
+      ]
+    },
+    "HeyGen - Get Voices":        { "main": [[{ "node": "Merge - Context + Voices", "type": "main", "index": 0 }]] },
+    "Merge - Context + Voices":   { "main": [[{ "node": "Set Voice From API",        "type": "main", "index": 0 }]] },
+    "Set Voice From API":         { "main": [[{ "node": "Switch - Voice Found?",     "type": "main", "index": 0 }]] },
+    "Switch - Voice Found?": {
+      "main": [
+        [{ "node": "Merge - Ready to Create",   "type": "main", "index": 0 }],
+        [{ "node": "Update Sheet - No Voice",   "type": "main", "index": 0 }]
+      ]
+    },
+    "Use Default Voice":          { "main": [[{ "node": "Merge - Ready to Create",   "type": "main", "index": 0 }]] },
+    "Merge - Ready to Create": {
       "main": [[
         { "node": "HeyGen POST v3 Create Video", "type": "main", "index": 0 },
-        { "node": "Merge - Restore Row Context", "type": "main", "index": 1 }
+        { "node": "Merge - Restore Final Context","type": "main", "index": 1 }
       ]]
     },
-    "HeyGen POST v3 Create Video": { "main": [[{ "node": "Merge - Restore Row Context", "type": "main", "index": 0 }]] },
-    "Merge - Restore Row Context":  { "main": [[{ "node": "Switch - Created or Failed",  "type": "main", "index": 0 }]] },
+    "HeyGen POST v3 Create Video": { "main": [[{ "node": "Merge - Restore Final Context", "type": "main", "index": 0 }]] },
+    "Merge - Restore Final Context":{ "main": [[{ "node": "Switch - Created or Failed",   "type": "main", "index": 0 }]] },
     "Switch - Created or Failed": {
       "main": [
         [{ "node": "Update Sheet - Set Processing", "type": "main", "index": 0 }],

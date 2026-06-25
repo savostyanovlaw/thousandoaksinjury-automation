@@ -84,7 +84,7 @@
       "position": [1120, 300],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "REPLACE_WITH_HEYGEN_CREDENTIAL_ID",
+          "id": "",
           "name": "HeyGen API Key"
         }
       }
@@ -206,7 +206,7 @@
             "id":              "={{ $json.input2.ctx_id }}",
             "status":          "failed",
             "failure_message": "={{ $json.input1.data.error?.message ?? $json.input1.message ?? 'HeyGen returned failed status' }}",
-            "failure_code":    "={{ $json.input1.data.error?.code ?? $json.input1.code ?? '' }}"
+            "failure_code":    "={{ $json.input1.data.error?.code ?? $json.input1.code ?? 'POLL_ERROR' }}"
           },
           "matchingColumns": ["id"],
           "schema": [
