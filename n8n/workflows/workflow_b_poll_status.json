@@ -14,7 +14,7 @@
     {
       "parameters": {
         "operation": "readAllRows",
-        "documentId": { "__rl": true, "value": "={{$env.GOOGLE_SHEET_ID}}", "mode": "id" },
+        "documentId": { "__rl": true, "value": "1rFsEvJqvi5thhNVtMaAqTEgDSDzOobU7ZUHpLU3Vog8", "mode": "id" },
         "sheetName": { "__rl": true, "value": "Sheet1", "mode": "name" },
         "options": {}
       },
@@ -72,12 +72,8 @@
       "parameters": {
         "method": "GET",
         "url": "=https://api.heygen.com/v3/videos/{{ $json.ctx_video_id }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "X-Api-Key", "value": "={{$env.HEYGEN_API_KEY}}" }
-          ]
-        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
         "options": {},
         "onError": "continueRegularOutput"
       },
@@ -85,7 +81,13 @@
       "name": "HeyGen GET v3 Video Status",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1120, 300]
+      "position": [1120, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_HEYGEN_CREDENTIAL_ID",
+          "name": "HeyGen API Key"
+        }
+      }
     },
     {
       "parameters": {
@@ -160,7 +162,7 @@
     {
       "parameters": {
         "operation": "update",
-        "documentId": { "__rl": true, "value": "={{$env.GOOGLE_SHEET_ID}}", "mode": "id" },
+        "documentId": { "__rl": true, "value": "1rFsEvJqvi5thhNVtMaAqTEgDSDzOobU7ZUHpLU3Vog8", "mode": "id" },
         "sheetName": { "__rl": true, "value": "Sheet1", "mode": "name" },
         "columns": {
           "mappingMode": "defineBelow",
@@ -196,7 +198,7 @@
     {
       "parameters": {
         "operation": "update",
-        "documentId": { "__rl": true, "value": "={{$env.GOOGLE_SHEET_ID}}", "mode": "id" },
+        "documentId": { "__rl": true, "value": "1rFsEvJqvi5thhNVtMaAqTEgDSDzOobU7ZUHpLU3Vog8", "mode": "id" },
         "sheetName": { "__rl": true, "value": "Sheet1", "mode": "name" },
         "columns": {
           "mappingMode": "defineBelow",
@@ -229,17 +231,17 @@
     }
   ],
   "connections": {
-    "Cron Every 10 Minutes":         { "main": [[{ "node": "Read All Sheet Rows",              "type": "main", "index": 0 }]] },
-    "Read All Sheet Rows":            { "main": [[{ "node": "Filter - Processing With video_id","type": "main", "index": 0 }]] },
-    "Filter - Processing With video_id": { "main": [[{ "node": "Save Row Context",             "type": "main", "index": 0 }]] },
+    "Cron Every 10 Minutes":             { "main": [[{ "node": "Read All Sheet Rows",               "type": "main", "index": 0 }]] },
+    "Read All Sheet Rows":               { "main": [[{ "node": "Filter - Processing With video_id", "type": "main", "index": 0 }]] },
+    "Filter - Processing With video_id": { "main": [[{ "node": "Save Row Context",                  "type": "main", "index": 0 }]] },
     "Save Row Context": {
       "main": [[
         { "node": "HeyGen GET v3 Video Status",  "type": "main", "index": 0 },
         { "node": "Merge - Restore Row Context", "type": "main", "index": 1 }
       ]]
     },
-    "HeyGen GET v3 Video Status":    { "main": [[{ "node": "Merge - Restore Row Context", "type": "main", "index": 0 }]] },
-    "Merge - Restore Row Context":   { "main": [[{ "node": "Switch - Video Status",       "type": "main", "index": 0 }]] },
+    "HeyGen GET v3 Video Status":  { "main": [[{ "node": "Merge - Restore Row Context", "type": "main", "index": 0 }]] },
+    "Merge - Restore Row Context": { "main": [[{ "node": "Switch - Video Status",       "type": "main", "index": 0 }]] },
     "Switch - Video Status": {
       "main": [
         [{ "node": "Update Sheet - Completed", "type": "main", "index": 0 }],

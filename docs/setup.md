@@ -1,61 +1,69 @@
-# Setup — One-Time Credential Configuration
-
-Do this once. After setup, the system runs without your involvement.
-
----
+# Setup — One-Time Configuration
 
 ## Step 1 — Google Sheet
 
-1. Create a new Google Sheet.
-2. Name the first tab `Sheet1`.
-3. Add these exact column headers in row 1, in this order:
+Your sheet is already linked: `1rFsEvJqvi5thhNVtMaAqTEgDSDzOobU7ZUHpLU3Vog8`
+
+Confirm row 1 has exactly these column headers in this order:
 
 ```
 id | title | script | video_id | video_url | video_page_url | status | failure_message | failure_code
 ```
 
-4. Copy the Sheet ID from the URL:
-   `https://docs.google.com/spreadsheets/d/THIS_PART_IS_YOUR_ID/edit`
+---
+
+## Step 2 — Create the HeyGen API Credential in n8n
+
+This is the only credential you need to create manually.
+
+1. In n8n, go to **Credentials → New**
+2. Search for **Header Auth**
+3. Fill in:
+   - **Name:** `HeyGen API Key`
+   - **Name (header field):** `X-Api-Key`
+   - **Value:** *(paste your HeyGen API key here)*
+4. Click **Save**
+
+Your HeyGen API key is at: **https://app.heygen.com/settings** → API tab
 
 ---
 
-## Step 2 — n8n Environment Variables
+## Step 3 — Import Workflows
 
-In n8n, go to **Settings → Environment Variables** and add:
-
-| Variable | Value |
-|---|---|
-| `GOOGLE_SHEET_ID` | Your Sheet ID from Step 1 |
-| `HEYGEN_API_KEY` | From HeyGen dashboard → Settings → API Keys |
-| `HEYGEN_AVATAR_ID` | From HeyGen → Avatars → select your avatar → copy ID |
-| `HEYGEN_VOICE_ID` | From HeyGen → Voice Library → select voice → copy voice_id |
+1. In n8n: **Workflows → Import from File**
+2. Import `n8n/workflows/workflow_a_create_video.json`
+3. Import `n8n/workflows/workflow_b_poll_status.json`
 
 ---
 
-## Step 3 — n8n Google Sheets Credential
+## Step 4 — Connect Credentials Inside Each Workflow
 
-1. In n8n, go to **Credentials → New → Google Sheets OAuth2**.
-2. Follow the OAuth flow — sign in with the Google account that owns your Sheet.
-3. Name the credential `Google Sheets — Savostyanov`.
-4. After importing the workflow JSON files, open each Google Sheets node and select this credential.
+After importing, open each workflow and do the following:
+
+**In Workflow A**, click each of these nodes and select your credentials:
+- `HeyGen - Get My Avatar` → select **HeyGen API Key**
+- `HeyGen POST v3 Create Video` → select **HeyGen API Key**
+- `Google Sheets Trigger` → select your **Google Sheets** account
+- `Update Sheet - Set Processing` → select your **Google Sheets** account
+- `Update Sheet - Create Failed` → select your **Google Sheets** account
+
+**In Workflow B**, click each of these nodes and select your credentials:
+- `HeyGen GET v3 Video Status` → select **HeyGen API Key**
+- `Read All Sheet Rows` → select your **Google Sheets** account
+- `Update Sheet - Completed` → select your **Google Sheets** account
+- `Update Sheet - Failed` → select your **Google Sheets** account
 
 ---
 
-## Step 4 — Import Workflows
+## Step 5 — Activate and Test
 
-1. In n8n: **Workflows → Import from File**.
-2. Import `n8n/workflows/workflow_a_create_video.json`.
-3. Import `n8n/workflows/workflow_b_poll_status.json`.
-4. In every Google Sheets node in both workflows, select your `Google Sheets — Savostyanov` credential.
-5. Activate both workflows.
+1. Activate both workflows (toggle in top-right of each workflow).
+2. Add a test row to your Sheet:
+   - `id`: `v001`
+   - `title`: `Test Video`
+   - `script`: `This is a test. If you were hurt in an accident, call me directly.`
+   - `status`: leave blank
+3. Wait up to 60 seconds — `video_id` should appear and `status` should change to `processing`.
+4. Wait up to 10 minutes — `status` should change to `completed` with both URLs filled in.
 
----
-
-## Step 5 — Test
-
-1. Add one row to your Sheet with a unique `id`, a `title`, a short `script`, and leave `status` blank.
-2. Wait up to 60 seconds for Workflow A to trigger.
-3. Confirm `video_id` appears and `status` changes to `processing`.
-4. Wait up to 10 minutes for Workflow B to update `status` to `completed`.
-
-Setup is complete.
+Setup complete. You never need to look up Avatar IDs or Voice IDs — the workflow discovers them automatically from your HeyGen account.

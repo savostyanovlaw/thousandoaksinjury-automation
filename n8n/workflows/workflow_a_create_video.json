@@ -6,7 +6,7 @@
         "pollTimes": { "item": [{ "mode": "everyMinute" }] },
         "triggerOn": "specificSheet",
         "event": "rowAdded",
-        "documentId": { "__rl": true, "value": "={{$env.GOOGLE_SHEET_ID}}", "mode": "id" },
+        "documentId": { "__rl": true, "value": "1rFsEvJqvi5thhNVtMaAqTEgDSDzOobU7ZUHpLU3Vog8", "mode": "id" },
         "sheetName": { "__rl": true, "value": "Sheet1", "mode": "name" }
       },
       "id": "a-1",
@@ -90,26 +90,24 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://api.heygen.com/v3/videos",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "X-Api-Key",    "value": "={{$env.HEYGEN_API_KEY}}" },
-            { "name": "Content-Type", "value": "application/json" }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"video_inputs\": [\n    {\n      \"character\": {\n        \"type\": \"avatar\",\n        \"avatar_id\": \"{{$env.HEYGEN_AVATAR_ID}}\",\n        \"avatar_style\": \"normal\"\n      },\n      \"voice\": {\n        \"type\": \"text\",\n        \"input_text\": \"{{ $json.ctx_script }}\",\n        \"voice_id\": \"{{$env.HEYGEN_VOICE_ID}}\"\n      },\n      \"background\": {\n        \"type\": \"color\",\n        \"value\": \"#FFFFFF\"\n      }\n    }\n  ],\n  \"dimension\": { \"width\": 1080, \"height\": 1920 },\n  \"title\": \"{{ $json.ctx_title }}\"\n}",
+        "method": "GET",
+        "url": "https://api.heygen.com/v2/avatars?ownership=private&limit=1",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
         "options": {},
         "onError": "continueRegularOutput"
       },
       "id": "a-6",
-      "name": "HeyGen POST v3 Create Video",
+      "name": "HeyGen - Get My Avatar",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1100, 300]
+      "position": [1100, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_HEYGEN_CREDENTIAL_ID",
+          "name": "HeyGen API Key"
+        }
+      }
     },
     {
       "parameters": {
@@ -118,10 +116,65 @@
         "options": {}
       },
       "id": "a-7",
-      "name": "Merge - Restore Row Context",
+      "name": "Merge - Avatar into Context",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
       "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "enrich-1", "name": "ctx_id",        "value": "={{ $json.input2.ctx_id }}",                                                "type": "string" },
+            { "id": "enrich-2", "name": "ctx_title",     "value": "={{ $json.input2.ctx_title }}",                                             "type": "string" },
+            { "id": "enrich-3", "name": "ctx_script",    "value": "={{ $json.input2.ctx_script }}",                                            "type": "string" },
+            { "id": "enrich-4", "name": "ctx_avatar_id", "value": "={{ $json.input1.data.avatars[0].avatar_id }}",                             "type": "string" },
+            { "id": "enrich-5", "name": "ctx_voice_id",  "value": "={{ $json.input1.data.avatars[0].default_voice_id ?? $json.input1.data.avatars[0].voice_id }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a-8",
+      "name": "Set Avatar and Voice IDs",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1540, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.heygen.com/v3/videos",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"video_inputs\": [\n    {\n      \"character\": {\n        \"type\": \"avatar\",\n        \"avatar_id\": \"{{ $json.ctx_avatar_id }}\",\n        \"avatar_style\": \"normal\"\n      },\n      \"voice\": {\n        \"type\": \"text\",\n        \"input_text\": \"{{ $json.ctx_script }}\",\n        \"voice_id\": \"{{ $json.ctx_voice_id }}\"\n      },\n      \"background\": {\n        \"type\": \"color\",\n        \"value\": \"#FFFFFF\"\n      }\n    }\n  ],\n  \"dimension\": { \"width\": 1080, \"height\": 1920 },\n  \"title\": \"{{ $json.ctx_title }}\"\n}",
+        "options": {},
+        "onError": "continueRegularOutput"
+      },
+      "id": "a-9",
+      "name": "HeyGen POST v3 Create Video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_HEYGEN_CREDENTIAL_ID",
+          "name": "HeyGen API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "a-10",
+      "name": "Merge - Restore Row Context",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1980, 300]
     },
     {
       "parameters": {
@@ -147,16 +200,16 @@
         },
         "options": { "fallbackOutput": "extra" }
       },
-      "id": "a-8",
+      "id": "a-11",
       "name": "Switch - Created or Failed",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3,
-      "position": [1540, 300]
+      "position": [2200, 300]
     },
     {
       "parameters": {
         "operation": "update",
-        "documentId": { "__rl": true, "value": "={{$env.GOOGLE_SHEET_ID}}", "mode": "id" },
+        "documentId": { "__rl": true, "value": "1rFsEvJqvi5thhNVtMaAqTEgDSDzOobU7ZUHpLU3Vog8", "mode": "id" },
         "sheetName": { "__rl": true, "value": "Sheet1", "mode": "name" },
         "columns": {
           "mappingMode": "defineBelow",
@@ -184,16 +237,16 @@
         },
         "options": {}
       },
-      "id": "a-9",
+      "id": "a-12",
       "name": "Update Sheet - Set Processing",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.4,
-      "position": [1760, 180]
+      "position": [2420, 160]
     },
     {
       "parameters": {
         "operation": "update",
-        "documentId": { "__rl": true, "value": "={{$env.GOOGLE_SHEET_ID}}", "mode": "id" },
+        "documentId": { "__rl": true, "value": "1rFsEvJqvi5thhNVtMaAqTEgDSDzOobU7ZUHpLU3Vog8", "mode": "id" },
         "sheetName": { "__rl": true, "value": "Sheet1", "mode": "name" },
         "columns": {
           "mappingMode": "defineBelow",
@@ -218,11 +271,11 @@
         },
         "options": {}
       },
-      "id": "a-10",
+      "id": "a-13",
       "name": "Update Sheet - Create Failed",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.4,
-      "position": [1760, 420]
+      "position": [2420, 440]
     }
   ],
   "connections": {
@@ -236,6 +289,14 @@
     "Filter - Pending Status": { "main": [[{ "node": "Merge - Blank and Pending", "type": "main", "index": 1 }]] },
     "Merge - Blank and Pending": { "main": [[{ "node": "Save Row Context", "type": "main", "index": 0 }]] },
     "Save Row Context": {
+      "main": [[
+        { "node": "HeyGen - Get My Avatar",      "type": "main", "index": 0 },
+        { "node": "Merge - Avatar into Context", "type": "main", "index": 1 }
+      ]]
+    },
+    "HeyGen - Get My Avatar": { "main": [[{ "node": "Merge - Avatar into Context", "type": "main", "index": 0 }]] },
+    "Merge - Avatar into Context": { "main": [[{ "node": "Set Avatar and Voice IDs", "type": "main", "index": 0 }]] },
+    "Set Avatar and Voice IDs": {
       "main": [[
         { "node": "HeyGen POST v3 Create Video", "type": "main", "index": 0 },
         { "node": "Merge - Restore Row Context", "type": "main", "index": 1 }
