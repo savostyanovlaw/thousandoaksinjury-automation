@@ -139,8 +139,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "",
-          "name": "HeyGen API Key"
+          "id": "uykhzb95aWkauOqm",
+          "name": "Header Auth account"
         }
       }
     },
