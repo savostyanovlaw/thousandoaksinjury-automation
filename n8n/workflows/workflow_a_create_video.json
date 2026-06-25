@@ -1,0 +1,257 @@
+{
+  "name": "Workflow A - Create HeyGen Video",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": { "item": [{ "mode": "everyMinute" }] },
+        "triggerOn": "specificSheet",
+        "event": "rowAdded",
+        "documentId": { "__rl": true, "value": "={{$env.GOOGLE_SHEET_ID}}", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Sheet1", "mode": "name" }
+      },
+      "id": "a-1",
+      "name": "Google Sheets Trigger",
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "cond-blank",
+              "leftValue": "={{ $json['status'] }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "a-2",
+      "name": "Filter - Blank Status",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [440, 180]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "cond-pending",
+              "leftValue": "={{ $json['status'] }}",
+              "rightValue": "pending",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a-3",
+      "name": "Filter - Pending Status",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [440, 420]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "multiplex",
+        "options": {}
+      },
+      "id": "a-4",
+      "name": "Merge - Blank and Pending",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "a-ctx-1", "name": "ctx_id",     "value": "={{ $json['id'] }}",     "type": "string" },
+            { "id": "a-ctx-2", "name": "ctx_title",  "value": "={{ $json['title'] }}",  "type": "string" },
+            { "id": "a-ctx-3", "name": "ctx_script", "value": "={{ $json['script'] }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a-5",
+      "name": "Save Row Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.heygen.com/v3/videos",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Api-Key",    "value": "={{$env.HEYGEN_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"video_inputs\": [\n    {\n      \"character\": {\n        \"type\": \"avatar\",\n        \"avatar_id\": \"{{$env.HEYGEN_AVATAR_ID}}\",\n        \"avatar_style\": \"normal\"\n      },\n      \"voice\": {\n        \"type\": \"text\",\n        \"input_text\": \"{{ $json.ctx_script }}\",\n        \"voice_id\": \"{{$env.HEYGEN_VOICE_ID}}\"\n      },\n      \"background\": {\n        \"type\": \"color\",\n        \"value\": \"#FFFFFF\"\n      }\n    }\n  ],\n  \"dimension\": { \"width\": 1080, \"height\": 1920 },\n  \"title\": \"{{ $json.ctx_title }}\"\n}",
+        "options": {},
+        "onError": "continueRegularOutput"
+      },
+      "id": "a-6",
+      "name": "HeyGen POST v3 Create Video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "a-7",
+      "name": "Merge - Restore Row Context",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "id": "cond-video-id-present",
+                    "leftValue": "={{ $json.input1.data.video_id }}",
+                    "rightValue": "",
+                    "operator": { "type": "string", "operation": "notEquals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "success"
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "id": "a-8",
+      "name": "Switch - Created or Failed",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1540, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "value": "={{$env.GOOGLE_SHEET_ID}}", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Sheet1", "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id":              "={{ $json.input2.ctx_id }}",
+            "video_id":        "={{ $json.input1.data.video_id }}",
+            "status":          "processing",
+            "video_url":       "",
+            "video_page_url":  "",
+            "failure_message": "",
+            "failure_code":    ""
+          },
+          "matchingColumns": ["id"],
+          "schema": [
+            { "id": "id",              "displayName": "id",              "required": false, "defaultMatch": true,  "display": true, "type": "string", "canBeUsedToMatch": true  },
+            { "id": "title",           "displayName": "title",           "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "script",          "displayName": "script",          "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "video_id",        "displayName": "video_id",        "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "video_url",       "displayName": "video_url",       "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "video_page_url",  "displayName": "video_page_url",  "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "status",          "displayName": "status",          "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "failure_message", "displayName": "failure_message", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "failure_code",    "displayName": "failure_code",    "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a-9",
+      "name": "Update Sheet - Set Processing",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [1760, 180]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "value": "={{$env.GOOGLE_SHEET_ID}}", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Sheet1", "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id":              "={{ $json.input2.ctx_id }}",
+            "status":          "failed",
+            "failure_message": "={{ $json.input1.error?.message ?? $json.input1.message ?? 'HeyGen create error' }}",
+            "failure_code":    "={{ $json.input1.error?.code ?? $json.input1.code ?? '' }}"
+          },
+          "matchingColumns": ["id"],
+          "schema": [
+            { "id": "id",              "displayName": "id",              "required": false, "defaultMatch": true,  "display": true, "type": "string", "canBeUsedToMatch": true  },
+            { "id": "title",           "displayName": "title",           "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "script",          "displayName": "script",          "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "video_id",        "displayName": "video_id",        "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "video_url",       "displayName": "video_url",       "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "video_page_url",  "displayName": "video_page_url",  "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "status",          "displayName": "status",          "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "failure_message", "displayName": "failure_message", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "failure_code",    "displayName": "failure_code",    "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a-10",
+      "name": "Update Sheet - Create Failed",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [1760, 420]
+    }
+  ],
+  "connections": {
+    "Google Sheets Trigger": {
+      "main": [[
+        { "node": "Filter - Blank Status",   "type": "main", "index": 0 },
+        { "node": "Filter - Pending Status", "type": "main", "index": 0 }
+      ]]
+    },
+    "Filter - Blank Status":   { "main": [[{ "node": "Merge - Blank and Pending", "type": "main", "index": 0 }]] },
+    "Filter - Pending Status": { "main": [[{ "node": "Merge - Blank and Pending", "type": "main", "index": 1 }]] },
+    "Merge - Blank and Pending": { "main": [[{ "node": "Save Row Context", "type": "main", "index": 0 }]] },
+    "Save Row Context": {
+      "main": [[
+        { "node": "HeyGen POST v3 Create Video", "type": "main", "index": 0 },
+        { "node": "Merge - Restore Row Context", "type": "main", "index": 1 }
+      ]]
+    },
+    "HeyGen POST v3 Create Video": { "main": [[{ "node": "Merge - Restore Row Context", "type": "main", "index": 0 }]] },
+    "Merge - Restore Row Context":  { "main": [[{ "node": "Switch - Created or Failed",  "type": "main", "index": 0 }]] },
+    "Switch - Created or Failed": {
+      "main": [
+        [{ "node": "Update Sheet - Set Processing", "type": "main", "index": 0 }],
+        [{ "node": "Update Sheet - Create Failed",  "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "meta": { "templateCredsSetupCompleted": true },
+  "pinData": {}
+}
