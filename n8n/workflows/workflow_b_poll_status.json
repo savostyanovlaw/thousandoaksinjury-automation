@@ -23,7 +23,7 @@
     },
     {
       "parameters": {
-        "operation": "readAllRows",
+        "operation": "read",
         "documentId": {
           "__rl": true,
           "value": "1rFsEvJqvi5thhNVtMaAqTEgDSDzOobU7ZUHpLU3Vog8",
@@ -34,6 +34,8 @@
           "value": "Sheet1",
           "mode": "name"
         },
+        "filtersUI": {},
+        "combineFilters": "AND",
         "options": {}
       },
       "id": "b-2",
