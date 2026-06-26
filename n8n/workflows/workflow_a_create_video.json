@@ -146,7 +146,7 @@
       "id": "a-5",
       "name": "Merge - Context + Avatar",
       "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
+      "typeVersion": 2.1,
       "position": [
         1120,
         300
@@ -394,7 +394,7 @@
       "id": "a-11",
       "name": "Merge - Context + Voices",
       "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
+      "typeVersion": 2.1,
       "position": [
         2220,
         300
@@ -624,7 +624,7 @@
       "id": "a-16",
       "name": "Merge - Ready to Create",
       "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
+      "typeVersion": 2.1,
       "position": [
         2880,
         160
@@ -666,7 +666,7 @@
       "id": "a-18",
       "name": "Merge - Restore Final Context",
       "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
+      "typeVersion": 2.1,
       "position": [
         3320,
         160
