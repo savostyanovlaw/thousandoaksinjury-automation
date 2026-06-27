@@ -32,9 +32,9 @@
         300
       ],
       "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "",
-          "name": "Google Sheets account"
+        "googleSheetsTriggerOAuth2Api": {
+          "id": "DV2rMIFgcXuoaM5W",
+          "name": "Google Sheets Trigger account 2"
         }
       }
     },
@@ -133,7 +133,7 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "uykhzb95aWkauOqm",
-          "name": "Header Auth account"
+          "name": "HeyGen API Key"
         }
       }
     },
@@ -313,8 +313,8 @@
       ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "",
-          "name": "Google Sheets account"
+          "id": "VQ36yooj9IJ1wrje",
+          "name": "Google Sheets account 3"
         }
       }
     },
@@ -426,7 +426,7 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "uykhzb95aWkauOqm",
-          "name": "Header Auth account"
+          "name": "HeyGen API Key"
         }
       }
     },
@@ -653,8 +653,8 @@
       ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "",
-          "name": "Google Sheets account"
+          "id": "VQ36yooj9IJ1wrje",
+          "name": "Google Sheets account 3"
         }
       }
     },
@@ -743,7 +743,7 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "uykhzb95aWkauOqm",
-          "name": "Header Auth account"
+          "name": "HeyGen API Key"
         }
       }
     },
@@ -926,8 +926,8 @@
       ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "",
-          "name": "Google Sheets account"
+          "id": "VQ36yooj9IJ1wrje",
+          "name": "Google Sheets account 3"
         }
       }
     },
@@ -1051,8 +1051,8 @@
       ],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "",
-          "name": "Google Sheets account"
+          "id": "VQ36yooj9IJ1wrje",
+          "name": "Google Sheets account 3"
         }
       }
     }
