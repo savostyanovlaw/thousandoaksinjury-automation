@@ -1,0 +1,7 @@
+# Normalize line endings for website source files to LF in the repository
+# and on checkout, so builds/deploys are byte-stable across platforms.
+website/**/*.html text eol=lf
+website/**/*.css  text eol=lf
+website/**/*.js   text eol=lf
+website/**/*.xml  text eol=lf
+website/**/*.txt  text eol=lf
