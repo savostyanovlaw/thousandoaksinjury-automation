@@ -25,9 +25,11 @@ class PersonSegmenter(
         val height: Int,
         val inferenceTimeMs: Long,
         val foregroundFraction: Float,
+        val frame: Bitmap,
     )
 
     private val segmenter: ImageSegmenter
+    @Volatile private var latestAnalysisFrame: Bitmap? = null
 
     init {
         val baseOptions = BaseOptions.builder()
@@ -43,6 +45,7 @@ class PersonSegmenter(
             .setResultListener { result, _ ->
                 val confidenceMask = result.confidenceMasks().orElse(emptyList()).firstOrNull()
                     ?: return@setResultListener
+                val frame = latestAnalysisFrame ?: return@setResultListener
                 val byteBuffer = ByteBufferExtractor.extract(confidenceMask)
                     .duplicate()
                     .order(ByteOrder.nativeOrder())
@@ -65,6 +68,7 @@ class PersonSegmenter(
                         height = confidenceMask.height,
                         inferenceTimeMs = (SystemClock.uptimeMillis() - result.timestampMs()).coerceAtLeast(0L),
                         foregroundFraction = foregroundPixels.toFloat() / values.size.coerceAtLeast(1),
+                        frame = frame,
                     )
                 )
             }
@@ -88,6 +92,7 @@ class PersonSegmenter(
             }
             val oriented = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
             val analysisBitmap = Bitmap.createScaledBitmap(oriented, ANALYSIS_SIZE, ANALYSIS_SIZE, true)
+            latestAnalysisFrame = analysisBitmap
             val mpImage = BitmapImageBuilder(analysisBitmap).build()
             segmenter.segmentAsync(mpImage, SystemClock.uptimeMillis())
         } catch (error: Exception) {
@@ -98,6 +103,7 @@ class PersonSegmenter(
     }
 
     override fun close() {
+        latestAnalysisFrame = null
         segmenter.close()
     }
 
