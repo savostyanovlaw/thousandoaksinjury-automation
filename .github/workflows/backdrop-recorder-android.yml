@@ -26,6 +26,14 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Bundle offline selfie segmentation model
+        run: |
+          mkdir -p apps/backdrop-recorder/app/src/main/assets
+          curl --fail --location --retry 3 \
+            https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite \
+            --output apps/backdrop-recorder/app/src/main/assets/selfie_segmenter.tflite
+          test -s apps/backdrop-recorder/app/src/main/assets/selfie_segmenter.tflite
+
       - name: Run unit tests
         run: gradle -p apps/backdrop-recorder testDebugUnitTest --stacktrace
 
