@@ -33,10 +33,13 @@ class MainActivity : ComponentActivity() {
     private lateinit var statusText: TextView
     private lateinit var backgroundPreview: ImageView
     private lateinit var maskOverlay: MaskOverlayView
+    private lateinit var cameraSwitchButton: Button
     private lateinit var analysisExecutor: ExecutorService
     private var personSegmenter: PersonSegmenter? = null
     private var cameraReady = false
     private var backgroundSelected = false
+    private var cameraFacing = CameraFacing.FRONT
+    private var cameraBinding = false
 
     private val cameraPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -131,6 +134,19 @@ class MainActivity : ComponentActivity() {
             }
         )
 
+        cameraSwitchButton = Button(this).apply {
+            text = "↻ CAMERA"
+            textSize = 12f
+            isAllCaps = false
+            setOnClickListener { switchCamera() }
+        }
+        cameraFrame.addView(
+            cameraSwitchButton,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START).apply {
+                setMargins(16, 16, 16, 16)
+            }
+        )
+
         val aiLabel = TextView(this).apply {
             text = "LIVE AI BACKGROUND"
             textSize = 11f
@@ -176,7 +192,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun switchCamera() {
+        if (cameraBinding) return
+        cameraFacing = CameraFacing.toggle(cameraFacing)
+        cameraReady = false
+        statusText.text = if (cameraFacing == CameraFacing.FRONT) {
+            "Switching to front camera…"
+        } else {
+            "Switching to rear camera…"
+        }
+        startCamera()
+    }
+
     private fun startCamera() {
+        if (cameraBinding) return
+        cameraBinding = true
+        cameraSwitchButton.isEnabled = false
+        val requestedFacing = cameraFacing
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
             try {
@@ -218,18 +250,30 @@ class MainActivity : ComponentActivity() {
                             if (segmenter == null) {
                                 imageProxy.close()
                             } else {
-                                segmenter.analyze(imageProxy, mirrorFrontCamera = true)
+                                segmenter.analyze(
+                                    imageProxy,
+                                    mirrorFrontCamera = CameraFacing.shouldMirror(requestedFacing)
+                                )
                             }
                         }
                     }
 
+                val selector = if (requestedFacing == CameraFacing.FRONT) {
+                    CameraSelector.DEFAULT_FRONT_CAMERA
+                } else {
+                    CameraSelector.DEFAULT_BACK_CAMERA
+                }
+
                 cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(this, CameraSelector.DEFAULT_FRONT_CAMERA, preview, analysis)
+                cameraProvider.bindToLifecycle(this, selector, preview, analysis)
                 cameraReady = true
                 updateReadyStatus()
             } catch (error: Exception) {
                 cameraReady = false
                 statusText.text = "Camera/AI could not start: ${error.message ?: "unknown error"}"
+            } finally {
+                cameraBinding = false
+                cameraSwitchButton.isEnabled = true
             }
         }, ContextCompat.getMainExecutor(this))
     }
