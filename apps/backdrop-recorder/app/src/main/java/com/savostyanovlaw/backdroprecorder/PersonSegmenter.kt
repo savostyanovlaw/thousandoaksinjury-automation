@@ -29,7 +29,7 @@ class PersonSegmenter(
     )
 
     private val segmenter: ImageSegmenter
-    @Volatile private var latestAnalysisFrame: Bitmap? = null
+    @Volatile private var latestCompositeFrame: Bitmap? = null
 
     init {
         val baseOptions = BaseOptions.builder()
@@ -45,7 +45,7 @@ class PersonSegmenter(
             .setResultListener { result, _ ->
                 val confidenceMask = result.confidenceMasks().orElse(emptyList()).firstOrNull()
                     ?: return@setResultListener
-                val frame = latestAnalysisFrame ?: return@setResultListener
+                val frame = latestCompositeFrame ?: return@setResultListener
                 val byteBuffer = ByteBufferExtractor.extract(confidenceMask)
                     .duplicate()
                     .order(ByteOrder.nativeOrder())
@@ -91,8 +91,11 @@ class PersonSegmenter(
                 }
             }
             val oriented = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+
+            // Preserve the camera-resolution oriented frame for compositing. Only the copy
+            // sent to MediaPipe is reduced to 256x256 so AI remains lightweight on A23.
+            latestCompositeFrame = oriented
             val analysisBitmap = Bitmap.createScaledBitmap(oriented, ANALYSIS_SIZE, ANALYSIS_SIZE, true)
-            latestAnalysisFrame = analysisBitmap
             val mpImage = BitmapImageBuilder(analysisBitmap).build()
             segmenter.segmentAsync(mpImage, SystemClock.uptimeMillis())
         } catch (error: Exception) {
@@ -103,7 +106,7 @@ class PersonSegmenter(
     }
 
     override fun close() {
-        latestAnalysisFrame = null
+        latestCompositeFrame = null
         segmenter.close()
     }
 
