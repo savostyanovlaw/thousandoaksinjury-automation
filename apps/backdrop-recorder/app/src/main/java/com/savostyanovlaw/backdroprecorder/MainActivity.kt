@@ -2,11 +2,13 @@ package com.savostyanovlaw.backdroprecorder
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.util.Size
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.FrameLayout
@@ -27,6 +29,7 @@ import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
     private lateinit var previewView: PreviewView
+    private lateinit var compositePreview: CompositePreviewView
     private lateinit var statusText: TextView
     private lateinit var backgroundPreview: ImageView
     private lateinit var maskOverlay: MaskOverlayView
@@ -47,10 +50,21 @@ class MainActivity : ComponentActivity() {
     private val photoPicker =
         registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
             if (uri != null) {
-                backgroundPreview.setImageURI(uri)
-                backgroundPreview.visibility = ImageView.VISIBLE
-                backgroundSelected = true
-                updateReadyStatus()
+                try {
+                    val bitmap = contentResolver.openInputStream(uri)?.use(BitmapFactory::decodeStream)
+                    if (bitmap == null) {
+                        statusText.text = "Could not open the selected background"
+                        return@registerForActivityResult
+                    }
+                    backgroundPreview.setImageBitmap(bitmap)
+                    backgroundPreview.visibility = ImageView.VISIBLE
+                    compositePreview.setBackgroundBitmap(bitmap)
+                    backgroundSelected = true
+                    maskOverlay.visibility = View.GONE
+                    updateReadyStatus()
+                } catch (error: Exception) {
+                    statusText.text = "Could not open background: ${error.message ?: "unknown error"}"
+                }
             } else if (!backgroundSelected) {
                 statusText.text = "No background selected"
             }
@@ -91,6 +105,13 @@ class MainActivity : ComponentActivity() {
         }
         cameraFrame.addView(previewView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
+        compositePreview = CompositePreviewView(this).apply {
+            visibility = View.GONE
+            isClickable = false
+            isFocusable = false
+        }
+        cameraFrame.addView(compositePreview, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+
         maskOverlay = MaskOverlayView(this).apply {
             isClickable = false
             isFocusable = false
@@ -111,7 +132,7 @@ class MainActivity : ComponentActivity() {
         )
 
         val aiLabel = TextView(this).apply {
-            text = "AI PERSON MASK"
+            text = "LIVE AI BACKGROUND"
             textSize = 11f
             setTextColor(Color.WHITE)
             setBackgroundColor(0x66000000)
@@ -137,7 +158,7 @@ class MainActivity : ComponentActivity() {
         })
 
         val recordPlaceholder = Button(this).apply {
-            text = "Record — composite preview next"
+            text = "Record — coming after live preview test"
             isEnabled = false
         }
         root.addView(recordPlaceholder, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
@@ -169,12 +190,17 @@ class MainActivity : ComponentActivity() {
                     context = this,
                     onMask = { result ->
                         runOnUiThread {
-                            maskOverlay.setMask(result.mask, result.width, result.height)
                             val percent = (result.foregroundFraction * 100f).toInt().coerceIn(0, 100)
-                            statusText.text = if (backgroundSelected) {
-                                "AI MASK ACTIVE — person $percent% — background ready"
+                            if (backgroundSelected) {
+                                compositePreview.setFrame(result.frame, result.mask, result.width, result.height)
+                                compositePreview.visibility = View.VISIBLE
+                                maskOverlay.visibility = View.GONE
+                                statusText.text = "LIVE BACKGROUND ACTIVE — person $percent%"
                             } else {
-                                "AI MASK ACTIVE — person $percent% — choose a background"
+                                compositePreview.visibility = View.GONE
+                                maskOverlay.visibility = View.VISIBLE
+                                maskOverlay.setMask(result.mask, result.width, result.height)
+                                statusText.text = "AI MASK ACTIVE — person $percent% — choose a background"
                             }
                         }
                     },
@@ -211,7 +237,7 @@ class MainActivity : ComponentActivity() {
     private fun updateReadyStatus() {
         statusText.text = when {
             CompositeReadiness.isReady(cameraReady, backgroundSelected) ->
-                "Camera + AI + background ready — waiting for live AI mask"
+                "Camera + AI + background ready — building live composite"
             cameraReady -> "Camera + AI ready — choose a background"
             backgroundSelected -> "Background selected — preparing camera"
             else -> "Preparing camera and AI…"
@@ -222,6 +248,7 @@ class MainActivity : ComponentActivity() {
         personSegmenter?.close()
         personSegmenter = null
         maskOverlay.clearMask()
+        compositePreview.clear()
         analysisExecutor.shutdown()
         super.onDestroy()
     }
