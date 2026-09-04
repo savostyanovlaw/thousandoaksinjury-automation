@@ -6,26 +6,25 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.view.View
-import java.nio.ByteBuffer
 import kotlin.math.max
 
 class MaskOverlayView(context: Context) : View(context) {
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
-    private val processor = MaskProcessor(alpha = 0.55f)
+    private val processor = MaskProcessor(alpha = 0.65f)
     private var maskBitmap: Bitmap? = null
 
-    fun setMask(mask: ByteBuffer, outputWidth: Int, outputHeight: Int) {
-        val raw = FloatArray(outputWidth * outputHeight)
-        val source = mask.duplicate().apply { rewind() }
-        for (index in raw.indices) {
-            val category = source.get(index).toInt() and 0xFF
-            raw[index] = if (category == PERSON_CATEGORY) 1f else 0f
-        }
+    fun setMask(mask: FloatArray, outputWidth: Int, outputHeight: Int) {
+        if (mask.size != outputWidth * outputHeight) return
 
-        val smoothed = processor.smooth(raw)
+        val smoothed = processor.smooth(mask)
         val pixels = IntArray(smoothed.size)
         for (index in pixels.indices) {
-            val alpha = (smoothed[index] * 120f).toInt().coerceIn(0, 120)
+            val confidence = smoothed[index].coerceIn(0f, 1f)
+            val alpha = when {
+                confidence < 0.25f -> 0
+                confidence < 0.45f -> ((confidence - 0.25f) / 0.20f * 100f).toInt()
+                else -> (100f + ((confidence - 0.45f) / 0.55f * 110f)).toInt()
+            }.coerceIn(0, 210)
             pixels[index] = Color.argb(alpha, 0, 255, 80)
         }
         maskBitmap = Bitmap.createBitmap(pixels, outputWidth, outputHeight, Bitmap.Config.ARGB_8888)
@@ -51,9 +50,5 @@ class MaskOverlayView(context: Context) : View(context) {
         canvas.scale(scale, scale)
         canvas.drawBitmap(bitmap, 0f, 0f, paint)
         canvas.restore()
-    }
-
-    companion object {
-        private const val PERSON_CATEGORY = 1
     }
 }
