@@ -11,7 +11,7 @@ import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.core.Delegate
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.imagesegmenter.ImageSegmenter
-import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 class PersonSegmenter(
     context: Context,
@@ -20,10 +20,11 @@ class PersonSegmenter(
 ) : AutoCloseable {
 
     data class MaskResult(
-        val mask: ByteBuffer,
+        val mask: FloatArray,
         val width: Int,
         val height: Int,
         val inferenceTimeMs: Long,
+        val foregroundFraction: Float,
     )
 
     private val segmenter: ImageSegmenter
@@ -37,17 +38,33 @@ class PersonSegmenter(
         val options = ImageSegmenter.ImageSegmenterOptions.builder()
             .setBaseOptions(baseOptions)
             .setRunningMode(RunningMode.LIVE_STREAM)
-            .setOutputCategoryMask(true)
-            .setOutputConfidenceMasks(false)
+            .setOutputCategoryMask(false)
+            .setOutputConfidenceMasks(true)
             .setResultListener { result, _ ->
-                val mask = result.categoryMask().orElse(null) ?: return@setResultListener
-                val buffer = ByteBufferExtractor.extract(mask)
+                val confidenceMask = result.confidenceMasks().orElse(emptyList()).firstOrNull()
+                    ?: return@setResultListener
+                val byteBuffer = ByteBufferExtractor.extract(confidenceMask)
+                    .duplicate()
+                    .order(ByteOrder.nativeOrder())
+                val floatBuffer = byteBuffer.asFloatBuffer()
+                val values = FloatArray(confidenceMask.width * confidenceMask.height)
+                floatBuffer.rewind()
+                val count = minOf(values.size, floatBuffer.remaining())
+                floatBuffer.get(values, 0, count)
+
+                var foregroundPixels = 0
+                for (index in values.indices) {
+                    values[index] = values[index].coerceIn(0f, 1f)
+                    if (values[index] >= FOREGROUND_THRESHOLD) foregroundPixels++
+                }
+
                 onMask(
                     MaskResult(
-                        mask = buffer,
-                        width = mask.width,
-                        height = mask.height,
+                        mask = values,
+                        width = confidenceMask.width,
+                        height = confidenceMask.height,
                         inferenceTimeMs = (SystemClock.uptimeMillis() - result.timestampMs()).coerceAtLeast(0L),
+                        foregroundFraction = foregroundPixels.toFloat() / values.size.coerceAtLeast(1),
                     )
                 )
             }
@@ -87,5 +104,6 @@ class PersonSegmenter(
     companion object {
         const val MODEL_PATH = "selfie_segmenter.tflite"
         const val ANALYSIS_SIZE = 256
+        const val FOREGROUND_THRESHOLD = 0.45f
     }
 }
