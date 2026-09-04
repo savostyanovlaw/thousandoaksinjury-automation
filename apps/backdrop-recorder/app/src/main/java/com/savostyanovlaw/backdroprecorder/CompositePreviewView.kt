@@ -31,19 +31,33 @@ class CompositePreviewView(context: Context) : View(context) {
         val bg = background ?: return
         if (confidenceMask.size != maskWidth * maskHeight) return
 
-        val normalizedFrame = if (frame.width == maskWidth && frame.height == maskHeight) {
+        val (outputWidth, outputHeight) = CompositeDimensions.output(
+            frameWidth = frame.width,
+            frameHeight = frame.height,
+            maskWidth = maskWidth,
+            maskHeight = maskHeight
+        )
+        val normalizedFrame = if (frame.width == outputWidth && frame.height == outputHeight) {
             frame
         } else {
-            Bitmap.createScaledBitmap(frame, maskWidth, maskHeight, true)
+            Bitmap.createScaledBitmap(frame, outputWidth, outputHeight, true)
         }
-        val normalizedBackground = centerCropAndScale(bg, maskWidth, maskHeight)
-        val foregroundPixels = IntArray(maskWidth * maskHeight)
-        val backgroundPixels = IntArray(maskWidth * maskHeight)
-        normalizedFrame.getPixels(foregroundPixels, 0, maskWidth, 0, 0, maskWidth, maskHeight)
-        normalizedBackground.getPixels(backgroundPixels, 0, maskWidth, 0, 0, maskWidth, maskHeight)
-        val smoothed = maskProcessor.smooth(confidenceMask)
-        val outputPixels = CompositePixelMixer.mix(foregroundPixels, backgroundPixels, smoothed)
-        composite = Bitmap.createBitmap(outputPixels, maskWidth, maskHeight, Bitmap.Config.ARGB_8888)
+        val normalizedBackground = centerCropAndScale(bg, outputWidth, outputHeight)
+        val smoothedLowResMask = maskProcessor.smooth(confidenceMask)
+        val fullResMask = scaleMask(
+            smoothedLowResMask,
+            maskWidth,
+            maskHeight,
+            outputWidth,
+            outputHeight
+        )
+
+        val foregroundPixels = IntArray(outputWidth * outputHeight)
+        val backgroundPixels = IntArray(outputWidth * outputHeight)
+        normalizedFrame.getPixels(foregroundPixels, 0, outputWidth, 0, 0, outputWidth, outputHeight)
+        normalizedBackground.getPixels(backgroundPixels, 0, outputWidth, 0, 0, outputWidth, outputHeight)
+        val outputPixels = CompositePixelMixer.mix(foregroundPixels, backgroundPixels, fullResMask)
+        composite = Bitmap.createBitmap(outputPixels, outputWidth, outputHeight, Bitmap.Config.ARGB_8888)
         invalidate()
     }
 
@@ -52,6 +66,25 @@ class CompositePreviewView(context: Context) : View(context) {
         val bitmap = composite ?: return
         val destination = RectF(0f, 0f, width.toFloat(), height.toFloat())
         canvas.drawBitmap(bitmap, null, destination, paint)
+    }
+
+    private fun scaleMask(
+        source: FloatArray,
+        sourceWidth: Int,
+        sourceHeight: Int,
+        targetWidth: Int,
+        targetHeight: Int
+    ): FloatArray {
+        if (sourceWidth == targetWidth && sourceHeight == targetHeight) return source
+        val result = FloatArray(targetWidth * targetHeight)
+        for (y in 0 until targetHeight) {
+            val sourceY = ((y.toLong() * sourceHeight) / targetHeight).toInt().coerceIn(0, sourceHeight - 1)
+            for (x in 0 until targetWidth) {
+                val sourceX = ((x.toLong() * sourceWidth) / targetWidth).toInt().coerceIn(0, sourceWidth - 1)
+                result[y * targetWidth + x] = source[sourceY * sourceWidth + sourceX]
+            }
+        }
+        return result
     }
 
     private fun centerCropAndScale(source: Bitmap, targetWidth: Int, targetHeight: Int): Bitmap {
