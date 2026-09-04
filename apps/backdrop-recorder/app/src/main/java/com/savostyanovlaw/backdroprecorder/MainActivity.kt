@@ -170,12 +170,15 @@ class MainActivity : ComponentActivity() {
                     onMask = { result ->
                         runOnUiThread {
                             maskOverlay.setMask(result.mask, result.width, result.height)
-                            if (cameraReady && !backgroundSelected) {
-                                statusText.text = "AI person detection active — choose a background"
+                            val percent = (result.foregroundFraction * 100f).toInt().coerceIn(0, 100)
+                            statusText.text = if (backgroundSelected) {
+                                "AI MASK ACTIVE — person $percent% — background ready"
+                            } else {
+                                "AI MASK ACTIVE — person $percent% — choose a background"
                             }
                         }
                     },
-                    onError = { message -> runOnUiThread { statusText.text = "AI: $message" } },
+                    onError = { message -> runOnUiThread { statusText.text = "AI ERROR: $message" } },
                 )
 
                 val analysis = ImageAnalysis.Builder()
@@ -208,7 +211,7 @@ class MainActivity : ComponentActivity() {
     private fun updateReadyStatus() {
         statusText.text = when {
             CompositeReadiness.isReady(cameraReady, backgroundSelected) ->
-                "Camera + AI + background ready — green overlay shows detected person"
+                "Camera + AI + background ready — waiting for live AI mask"
             cameraReady -> "Camera + AI ready — choose a background"
             backgroundSelected -> "Background selected — preparing camera"
             else -> "Preparing camera and AI…"
