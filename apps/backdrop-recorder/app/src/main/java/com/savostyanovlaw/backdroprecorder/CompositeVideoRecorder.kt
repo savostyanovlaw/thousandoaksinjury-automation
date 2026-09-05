@@ -24,11 +24,13 @@ class CompositeVideoRecorder(
     private val context: Context,
     private val frameProvider: () -> Bitmap?,
     private val profile: RecordingProfile = RecordingProfile.a23Prototype(),
+    private val onStage: (RecordingStage, String?) -> Unit = { _, _ -> },
     private val onSaved: (Uri) -> Unit,
     private val onError: (String) -> Unit,
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val active = AtomicBoolean(false)
+    private val firstFrameReported = AtomicBoolean(false)
     private var recorder: MediaRecorder? = null
     private var renderer: EglBitmapRenderer? = null
     private var frameExecutor: ScheduledExecutorService? = null
@@ -42,6 +44,7 @@ class CompositeVideoRecorder(
     fun start() {
         check(!active.get()) { "Recorder already active" }
         val destination = createOutputDestination()
+        emitStage(RecordingStage.OUTPUT_CREATED, outputUri?.toString())
         try {
             val mediaRecorder = MediaRecorder().apply {
                 setAudioSource(MediaRecorder.AudioSource.MIC)
@@ -57,28 +60,34 @@ class CompositeVideoRecorder(
                 setOutputFile(destination.fileDescriptor)
                 prepare()
             }
+            emitStage(RecordingStage.RECORDER_PREPARED, "${profile.width}x${profile.height}@${profile.frameRate}")
 
             val eglRenderer = EglBitmapRenderer(
                 targetSurface = mediaRecorder.surface,
                 width = profile.width,
                 height = profile.height,
-                frameRate = profile.frameRate,
             )
 
             recorder = mediaRecorder
             renderer = eglRenderer
             active.set(true)
             mediaRecorder.start()
+            emitStage(RecordingStage.RECORDER_STARTED, null)
 
             val periodMs = (1000L / profile.frameRate).coerceAtLeast(1L)
             frameExecutor = Executors.newSingleThreadScheduledExecutor().also { executor ->
                 executor.scheduleAtFixedRate({
                     if (!active.get()) return@scheduleAtFixedRate
                     try {
-                        frameProvider()?.let { frame -> eglRenderer.render(frame) }
+                        frameProvider()?.let { frame ->
+                            eglRenderer.render(frame)
+                            if (firstFrameReported.compareAndSet(false, true)) {
+                                emitStage(RecordingStage.FRAMES_ACTIVE, "${frame.width}x${frame.height}")
+                            }
+                        }
                     } catch (error: Throwable) {
                         if (active.compareAndSet(true, false)) {
-                            mainHandler.post { onError("Recording frame failed: ${error.message ?: "unknown error"}") }
+                            mainHandler.post { onError("Recording frame failed (${error.javaClass.simpleName}): ${error.message ?: "unknown error"}") }
                         }
                     }
                 }, 0L, periodMs, TimeUnit.MILLISECONDS)
@@ -104,6 +113,7 @@ class CompositeVideoRecorder(
                         recorder = null
                         mediaRecorder?.stop()
                         mediaRecorder?.release()
+                        emitStage(RecordingStage.RECORDER_STOPPED, null)
                     }
                     RecordingStopStep.RELEASE_RENDERER -> {
                         renderer?.release()
@@ -112,7 +122,9 @@ class CompositeVideoRecorder(
                     RecordingStopStep.FINALIZE_OUTPUT -> {
                         outputDescriptor?.close()
                         outputDescriptor = null
+                        val sizeBytes = outputSizeBytes()
                         finalizeDestination()
+                        emitStage(RecordingStage.OUTPUT_FINALIZED, "$sizeBytes bytes")
                     }
                 }
             }
@@ -129,7 +141,7 @@ class CompositeVideoRecorder(
             }
             renderer = null
             cleanupFailedDestination()
-            mainHandler.post { onError("Could not finish recording: ${error.message ?: "unknown error"}") }
+            mainHandler.post { onError("Could not finish recording (${error.javaClass.simpleName}): ${error.message ?: "unknown error"}") }
         }
     }
 
@@ -187,13 +199,26 @@ class CompositeVideoRecorder(
         }
     }
 
+    private fun outputSizeBytes(): Long {
+        val uri = outputUri
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && uri != null) {
+            return try {
+                context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
+            } catch (_: Throwable) {
+                -1L
+            }
+        }
+        return outputFile?.length() ?: -1L
+    }
+
     private fun finalizeDestination() {
         val uri = outputUri
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && uri != null) {
             val values = ContentValues().apply {
                 put(MediaStore.Video.Media.IS_PENDING, 0)
             }
-            context.contentResolver.update(uri, values, null, null)
+            val updated = context.contentResolver.update(uri, values, null, null)
+            check(updated > 0) { "Gallery did not finalize the video entry" }
             outputUri = null
             mainHandler.post { onSaved(uri) }
             return
@@ -214,6 +239,10 @@ class CompositeVideoRecorder(
                 mainHandler.post { onError("Video recorded but could not be added to Gallery") }
             }
         }
+    }
+
+    private fun emitStage(stage: RecordingStage, detail: String?) {
+        mainHandler.post { onStage(stage, detail) }
     }
 
     private fun cleanupFailedDestination() {
