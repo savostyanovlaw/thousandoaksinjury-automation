@@ -12,13 +12,15 @@ class CompositePreviewView(context: Context) : View(context) {
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
     private val maskProcessor = MaskProcessor(alpha = 0.65f)
     private var background: Bitmap? = null
-    private var composite: Bitmap? = null
+    @Volatile private var composite: Bitmap? = null
 
     fun setBackgroundBitmap(bitmap: Bitmap?) {
         background = bitmap
         composite = null
         invalidate()
     }
+
+    fun latestCompositeFrame(): Bitmap? = composite
 
     fun clear() {
         background = null
