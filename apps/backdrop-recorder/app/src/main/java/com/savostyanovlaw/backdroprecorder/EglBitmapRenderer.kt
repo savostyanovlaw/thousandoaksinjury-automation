@@ -83,7 +83,6 @@ class EglBitmapRenderer(
         eglDisplay = EGL14.EGL_NO_DISPLAY
         eglContext = EGL14.EGL_NO_CONTEXT
         eglSurface = EGL14.EGL_NO_SURFACE
-        targetSurface.release()
     }
 
     private fun setupEgl() {
