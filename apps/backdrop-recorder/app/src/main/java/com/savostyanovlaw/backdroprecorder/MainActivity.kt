@@ -6,6 +6,9 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.util.Size
 import android.view.Gravity
 import android.view.View
@@ -24,6 +27,7 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -34,12 +38,30 @@ class MainActivity : ComponentActivity() {
     private lateinit var backgroundPreview: ImageView
     private lateinit var maskOverlay: MaskOverlayView
     private lateinit var cameraSwitchButton: Button
+    private lateinit var chooseBackgroundButton: Button
+    private lateinit var recordButton: Button
+    private lateinit var recordingIndicator: TextView
     private lateinit var analysisExecutor: ExecutorService
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val recordingStateMachine = RecordingStateMachine()
+    private var compositeVideoRecorder: CompositeVideoRecorder? = null
+    private var recordingStartedAtMs = 0L
     private var personSegmenter: PersonSegmenter? = null
     private var cameraReady = false
     private var backgroundSelected = false
     private var cameraFacing = CameraFacing.FRONT
     private var cameraBinding = false
+
+    private val timerRunnable = object : Runnable {
+        override fun run() {
+            if (recordingStateMachine.state != RecordingState.RECORDING) return
+            val elapsed = (SystemClock.elapsedRealtime() - recordingStartedAtMs).coerceAtLeast(0L)
+            recordingIndicator.text = "● REC ${formatElapsed(elapsed)}"
+            recordButton.text = "■ STOP  ${formatElapsed(elapsed)}"
+            mainHandler.postDelayed(this, 500L)
+        }
+    }
 
     private val cameraPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -47,6 +69,15 @@ class MainActivity : ComponentActivity() {
                 startCamera()
             } else {
                 statusText.text = "Camera permission is needed to record video."
+            }
+        }
+
+    private val audioPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                beginRecordingCountdown()
+            } else {
+                statusText.text = "Microphone permission is needed to record video with sound."
             }
         }
 
@@ -65,6 +96,7 @@ class MainActivity : ComponentActivity() {
                     backgroundSelected = true
                     maskOverlay.visibility = View.GONE
                     updateReadyStatus()
+                    updateRecordButtonState()
                 } catch (error: Exception) {
                     statusText.text = "Could not open background: ${error.message ?: "unknown error"}"
                 }
@@ -147,6 +179,20 @@ class MainActivity : ComponentActivity() {
             }
         )
 
+        recordingIndicator = TextView(this).apply {
+            visibility = View.GONE
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(0x88000000.toInt())
+            setPadding(16, 8, 16, 8)
+        }
+        cameraFrame.addView(
+            recordingIndicator,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
+                topMargin = 20
+            }
+        )
+
         val aiLabel = TextView(this).apply {
             text = "LIVE AI BACKGROUND"
             textSize = 11f
@@ -163,21 +209,24 @@ class MainActivity : ComponentActivity() {
 
         root.addView(cameraFrame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
-        val chooseBackground = Button(this).apply {
+        chooseBackgroundButton = Button(this).apply {
             text = "Choose Background"
             setOnClickListener {
-                photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                if (!recordingStateMachine.cameraLocked) {
+                    photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }
             }
         }
-        root.addView(chooseBackground, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+        root.addView(chooseBackgroundButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = 16
         })
 
-        val recordPlaceholder = Button(this).apply {
-            text = "Record — coming after live preview test"
+        recordButton = Button(this).apply {
+            text = "● RECORD"
             isEnabled = false
+            setOnClickListener { onRecordButtonPressed() }
         }
-        root.addView(recordPlaceholder, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+        root.addView(recordButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = 8
         })
 
@@ -192,10 +241,112 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun onRecordButtonPressed() {
+        when (recordingStateMachine.state) {
+            RecordingState.RECORDING -> stopRecording()
+            RecordingState.COUNTDOWN -> Unit
+            RecordingState.IDLE -> {
+                if (!recordingStateMachine.canStart(cameraReady, backgroundSelected)) return
+                if (compositePreview.latestCompositeFrame() == null) {
+                    statusText.text = "Wait a moment for the live background to become ready."
+                    return
+                }
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                    beginRecordingCountdown()
+                } else {
+                    audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            }
+        }
+    }
+
+    private fun beginRecordingCountdown() {
+        if (!recordingStateMachine.canStart(cameraReady, backgroundSelected)) return
+        if (compositePreview.latestCompositeFrame() == null) {
+            statusText.text = "Wait a moment for the live background to become ready."
+            return
+        }
+        recordingStateMachine.beginCountdown()
+        cameraSwitchButton.isEnabled = false
+        chooseBackgroundButton.isEnabled = false
+        recordButton.isEnabled = false
+        recordingIndicator.visibility = View.VISIBLE
+        showCountdown(3)
+    }
+
+    private fun showCountdown(value: Int) {
+        if (recordingStateMachine.state != RecordingState.COUNTDOWN) return
+        if (value > 0) {
+            recordingIndicator.text = value.toString()
+            statusText.text = "Recording starts in $value…"
+            mainHandler.postDelayed({ showCountdown(value - 1) }, 1000L)
+        } else {
+            startActualRecording()
+        }
+    }
+
+    private fun startActualRecording() {
+        if (recordingStateMachine.state != RecordingState.COUNTDOWN) return
+        val recorder = CompositeVideoRecorder(
+            context = this,
+            frameProvider = { compositePreview.latestCompositeFrame() },
+            onSaved = { uri ->
+                compositeVideoRecorder = null
+                recordingStateMachine.stop()
+                resetRecordingUi()
+                statusText.text = "Saved to Gallery — ${uri.lastPathSegment ?: "video"}"
+            },
+            onError = { message ->
+                compositeVideoRecorder = null
+                recordingStateMachine.stop()
+                resetRecordingUi()
+                statusText.text = message
+            },
+        )
+
+        try {
+            recorder.start()
+            compositeVideoRecorder = recorder
+            recordingStateMachine.beginRecording()
+            recordingStartedAtMs = SystemClock.elapsedRealtime()
+            recordingIndicator.text = "● REC 00:00"
+            recordButton.text = "■ STOP  00:00"
+            recordButton.isEnabled = true
+            statusText.text = "Recording video + microphone…"
+            mainHandler.removeCallbacks(timerRunnable)
+            mainHandler.post(timerRunnable)
+        } catch (error: Throwable) {
+            recorder.cancel()
+            recordingStateMachine.stop()
+            resetRecordingUi()
+            statusText.text = "Could not start recording: ${error.message ?: "unknown error"}"
+        }
+    }
+
+    private fun stopRecording() {
+        if (recordingStateMachine.state != RecordingState.RECORDING) return
+        mainHandler.removeCallbacks(timerRunnable)
+        recordButton.isEnabled = false
+        recordButton.text = "Saving…"
+        recordingIndicator.text = "Saving…"
+        statusText.text = "Finishing video and saving to Gallery…"
+        compositeVideoRecorder?.stop()
+    }
+
+    private fun resetRecordingUi() {
+        mainHandler.removeCallbacks(timerRunnable)
+        recordingIndicator.visibility = View.GONE
+        chooseBackgroundButton.isEnabled = true
+        cameraSwitchButton.isEnabled = !cameraBinding
+        recordButton.text = "● RECORD"
+        updateRecordButtonState()
+    }
+
     private fun switchCamera() {
-        if (cameraBinding) return
+        if (cameraBinding || recordingStateMachine.cameraLocked) return
         cameraFacing = CameraFacing.toggle(cameraFacing)
         cameraReady = false
+        updateRecordButtonState()
         statusText.text = if (cameraFacing == CameraFacing.FRONT) {
             "Switching to front camera…"
         } else {
@@ -205,9 +356,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startCamera() {
-        if (cameraBinding) return
+        if (cameraBinding || recordingStateMachine.cameraLocked) return
         cameraBinding = true
         cameraSwitchButton.isEnabled = false
+        updateRecordButtonState()
         val requestedFacing = cameraFacing
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
@@ -227,13 +379,18 @@ class MainActivity : ComponentActivity() {
                                 compositePreview.setFrame(result.frame, result.mask, result.width, result.height)
                                 compositePreview.visibility = View.VISIBLE
                                 maskOverlay.visibility = View.GONE
-                                statusText.text = "LIVE BACKGROUND ACTIVE — person $percent%"
+                                if (recordingStateMachine.state == RecordingState.IDLE) {
+                                    statusText.text = "LIVE BACKGROUND ACTIVE — person $percent%"
+                                }
                             } else {
                                 compositePreview.visibility = View.GONE
                                 maskOverlay.visibility = View.VISIBLE
                                 maskOverlay.setMask(result.mask, result.width, result.height)
-                                statusText.text = "AI MASK ACTIVE — person $percent% — choose a background"
+                                if (recordingStateMachine.state == RecordingState.IDLE) {
+                                    statusText.text = "AI MASK ACTIVE — person $percent% — choose a background"
+                                }
                             }
+                            updateRecordButtonState()
                         }
                     },
                     onError = { message -> runOnUiThread { statusText.text = "AI ERROR: $message" } },
@@ -273,22 +430,46 @@ class MainActivity : ComponentActivity() {
                 statusText.text = "Camera/AI could not start: ${error.message ?: "unknown error"}"
             } finally {
                 cameraBinding = false
-                cameraSwitchButton.isEnabled = true
+                cameraSwitchButton.isEnabled = !recordingStateMachine.cameraLocked
+                updateRecordButtonState()
             }
         }, ContextCompat.getMainExecutor(this))
     }
 
     private fun updateReadyStatus() {
+        if (recordingStateMachine.state != RecordingState.IDLE) return
         statusText.text = when {
             CompositeReadiness.isReady(cameraReady, backgroundSelected) ->
-                "Camera + AI + background ready — building live composite"
+                "Camera + AI + background ready — tap RECORD"
             cameraReady -> "Camera + AI ready — choose a background"
             backgroundSelected -> "Background selected — preparing camera"
             else -> "Preparing camera and AI…"
         }
+        updateRecordButtonState()
+    }
+
+    private fun updateRecordButtonState() {
+        if (!::recordButton.isInitialized) return
+        recordButton.isEnabled = when (recordingStateMachine.state) {
+            RecordingState.RECORDING -> true
+            RecordingState.COUNTDOWN -> false
+            RecordingState.IDLE -> recordingStateMachine.canStart(cameraReady, backgroundSelected) &&
+                compositePreview.latestCompositeFrame() != null
+        }
+    }
+
+    private fun formatElapsed(milliseconds: Long): String {
+        val totalSeconds = milliseconds / 1000L
+        val minutes = totalSeconds / 60L
+        val seconds = totalSeconds % 60L
+        return String.format(Locale.US, "%02d:%02d", minutes, seconds)
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacksAndMessages(null)
+        compositeVideoRecorder?.cancel()
+        compositeVideoRecorder = null
+        recordingStateMachine.stop()
         personSegmenter?.close()
         personSegmenter = null
         maskOverlay.clearMask()
