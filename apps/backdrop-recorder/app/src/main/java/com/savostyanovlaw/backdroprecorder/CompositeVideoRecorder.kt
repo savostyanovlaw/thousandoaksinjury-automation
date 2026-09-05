@@ -62,6 +62,7 @@ class CompositeVideoRecorder(
                 targetSurface = mediaRecorder.surface,
                 width = profile.width,
                 height = profile.height,
+                frameRate = profile.frameRate,
             )
 
             recorder = mediaRecorder
