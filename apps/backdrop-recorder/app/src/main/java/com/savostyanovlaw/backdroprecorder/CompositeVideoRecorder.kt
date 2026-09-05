@@ -10,6 +10,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.widget.Toast
 import java.io.File
 import java.io.FileDescriptor
 import java.text.SimpleDateFormat
@@ -242,7 +243,11 @@ class CompositeVideoRecorder(
     }
 
     private fun emitStage(stage: RecordingStage, detail: String?) {
-        mainHandler.post { onStage(stage, detail) }
+        mainHandler.post {
+            onStage(stage, detail)
+            val suffix = detail?.let { " — $it" } ?: ""
+            Toast.makeText(context, "REC: ${stage.name}$suffix", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun cleanupFailedDestination() {
