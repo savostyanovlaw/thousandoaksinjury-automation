@@ -63,41 +63,53 @@ class CompositeVideoRecorder(
             }
             emitStage(RecordingStage.RECORDER_PREPARED, "${profile.width}x${profile.height}@${profile.frameRate}")
 
-            // Samsung/Qualcomm is sensitive to connecting an EGL producer to the
-            // MediaRecorder input Surface before MediaRecorder has entered STARTED.
-            // Start the recorder first, then attach EGL and begin frame delivery.
             recorder = mediaRecorder
-            active.set(true)
-            mediaRecorder.start()
-            emitStage(RecordingStage.RECORDER_STARTED, null)
+            val executor = Executors.newSingleThreadScheduledExecutor()
+            frameExecutor = executor
+            val startupScheduler = RecordingStartupScheduler { task -> executor.execute(task) }
 
-            val eglRenderer = EglBitmapRenderer(
-                targetSurface = mediaRecorder.surface,
-                width = profile.width,
-                height = profile.height,
-            )
-            renderer = eglRenderer
-
-            val periodMs = (1000L / profile.frameRate).coerceAtLeast(1L)
-            frameExecutor = Executors.newSingleThreadScheduledExecutor().also { executor ->
-                executor.scheduleAtFixedRate({
-                    if (!active.get()) return@scheduleAtFixedRate
+            startupScheduler.start(
+                startRecorder = {
+                    active.set(true)
+                    mediaRecorder.start()
+                    emitStage(RecordingStage.RECORDER_STARTED, null)
+                },
+                startRenderer = {
                     try {
-                        frameProvider()?.let { frame ->
-                            eglRenderer.render(frame)
-                            if (firstFrameReported.compareAndSet(false, true)) {
-                                emitStage(RecordingStage.FRAMES_ACTIVE, "${frame.width}x${frame.height}")
+                        if (!active.get()) return@start
+                        val eglRenderer = EglBitmapRenderer(
+                            targetSurface = mediaRecorder.surface,
+                            width = profile.width,
+                            height = profile.height,
+                        )
+                        if (!active.get()) {
+                            eglRenderer.release()
+                            return@start
+                        }
+                        renderer = eglRenderer
+
+                        val periodMs = (1000L / profile.frameRate).coerceAtLeast(1L)
+                        executor.scheduleAtFixedRate({
+                            if (!active.get()) return@scheduleAtFixedRate
+                            try {
+                                frameProvider()?.let { frame ->
+                                    eglRenderer.render(frame)
+                                    if (firstFrameReported.compareAndSet(false, true)) {
+                                        emitStage(RecordingStage.FRAMES_ACTIVE, "${frame.width}x${frame.height}")
+                                    }
+                                }
+                            } catch (error: Throwable) {
+                                failAfterStart("Recording frame failed", error)
                             }
-                        }
+                        }, 0L, periodMs, TimeUnit.MILLISECONDS)
                     } catch (error: Throwable) {
-                        if (active.compareAndSet(true, false)) {
-                            mainHandler.post { onError("Recording frame failed (${error.javaClass.simpleName}): ${error.message ?: "unknown error"}") }
-                        }
+                        failAfterStart("Renderer setup failed", error)
                     }
-                }, 0L, periodMs, TimeUnit.MILLISECONDS)
-            }
+                },
+            )
         } catch (error: Throwable) {
             active.set(false)
+            stopFrameDelivery()
             cleanupFailedDestination()
             releaseRecorderQuietly()
             throw error
@@ -150,6 +162,19 @@ class CompositeVideoRecorder(
         renderer = null
         releaseRecorderQuietly()
         cleanupFailedDestination()
+    }
+
+    private fun failAfterStart(prefix: String, error: Throwable) {
+        if (!active.compareAndSet(true, false)) return
+        try { renderer?.release() } catch (_: Throwable) {}
+        renderer = null
+        try { recorder?.reset() } catch (_: Throwable) {}
+        try { recorder?.release() } catch (_: Throwable) {}
+        recorder = null
+        cleanupFailedDestination()
+        mainHandler.post {
+            onError("$prefix (${error.javaClass.simpleName}): ${error.message ?: "unknown error"}")
+        }
     }
 
     private fun stopFrameDelivery() {
