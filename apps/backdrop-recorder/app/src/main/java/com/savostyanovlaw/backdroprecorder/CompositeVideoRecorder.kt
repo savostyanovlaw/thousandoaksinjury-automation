@@ -94,34 +94,39 @@ class CompositeVideoRecorder(
     fun stop() {
         if (!active.compareAndSet(true, false)) return
 
-        val executor = frameExecutor
-        frameExecutor = null
-        executor?.shutdownNow()
         try {
-            executor?.awaitTermination(500, TimeUnit.MILLISECONDS)
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
-        }
-
-        try {
-            renderer?.release()
-        } catch (_: Throwable) {
-        }
-        renderer = null
-
-        val mediaRecorder = recorder
-        recorder = null
-        try {
-            mediaRecorder?.stop()
-            mediaRecorder?.release()
-            outputDescriptor?.close()
-            outputDescriptor = null
-            finalizeDestination()
+            RecordingStopPlan.steps.forEach { step ->
+                when (step) {
+                    RecordingStopStep.STOP_FRAMES -> stopFrameDelivery()
+                    RecordingStopStep.STOP_RECORDER -> {
+                        val mediaRecorder = recorder
+                        recorder = null
+                        mediaRecorder?.stop()
+                        mediaRecorder?.release()
+                    }
+                    RecordingStopStep.RELEASE_RENDERER -> {
+                        renderer?.release()
+                        renderer = null
+                    }
+                    RecordingStopStep.FINALIZE_OUTPUT -> {
+                        outputDescriptor?.close()
+                        outputDescriptor = null
+                        finalizeDestination()
+                    }
+                }
+            }
         } catch (error: Throwable) {
+            stopFrameDelivery()
             try {
-                mediaRecorder?.release()
+                recorder?.release()
             } catch (_: Throwable) {
             }
+            recorder = null
+            try {
+                renderer?.release()
+            } catch (_: Throwable) {
+            }
+            renderer = null
             cleanupFailedDestination()
             mainHandler.post { onError("Could not finish recording: ${error.message ?: "unknown error"}") }
         }
@@ -130,8 +135,7 @@ class CompositeVideoRecorder(
     @Synchronized
     fun cancel() {
         active.set(false)
-        frameExecutor?.shutdownNow()
-        frameExecutor = null
+        stopFrameDelivery()
         try {
             renderer?.release()
         } catch (_: Throwable) {
@@ -139,6 +143,17 @@ class CompositeVideoRecorder(
         renderer = null
         releaseRecorderQuietly()
         cleanupFailedDestination()
+    }
+
+    private fun stopFrameDelivery() {
+        val executor = frameExecutor
+        frameExecutor = null
+        executor?.shutdownNow()
+        try {
+            executor?.awaitTermination(500, TimeUnit.MILLISECONDS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
     }
 
     private fun createOutputDestination(): OutputDestination {
