@@ -6,7 +6,6 @@ import android.opengl.EGLConfig
 import android.opengl.EGLContext
 import android.opengl.EGLDisplay
 import android.opengl.EGLSurface
-import android.opengl.EGLExt
 import android.opengl.GLES20
 import android.opengl.GLUtils
 import android.view.Surface
@@ -18,7 +17,6 @@ class EglBitmapRenderer(
     private val targetSurface: Surface,
     private val width: Int,
     private val height: Int,
-    frameRate: Int,
 ) {
     private var eglDisplay: EGLDisplay = EGL14.EGL_NO_DISPLAY
     private var eglContext: EGLContext = EGL14.EGL_NO_CONTEXT
@@ -27,7 +25,6 @@ class EglBitmapRenderer(
     private var textureId = 0
     private var positionHandle = 0
     private var textureHandle = 0
-    private val presentationClock = PresentationTimestampClock(frameRate)
 
     private val vertexBuffer: FloatBuffer = ByteBuffer
         .allocateDirect(VERTICES.size * 4)
@@ -65,11 +62,6 @@ class EglBitmapRenderer(
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
         GLES20.glDisableVertexAttribArray(positionHandle)
         GLES20.glDisableVertexAttribArray(textureHandle)
-
-        val presentationTimeNs = presentationClock.nextTimestampNs()
-        check(EGLExt.eglPresentationTimeANDROID(eglDisplay, eglSurface, presentationTimeNs)) {
-            "Unable to set encoder presentation timestamp"
-        }
         check(EGL14.eglSwapBuffers(eglDisplay, eglSurface)) {
             "Unable to submit frame to encoder"
         }
