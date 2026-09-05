@@ -228,6 +228,7 @@ class MainActivity : ComponentActivity() {
         }
         root.addView(recordButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = 8
+            bottomMargin = (RecordingUiSpacing.recordBottomLiftDp * resources.displayMetrics.density).toInt()
         })
 
         return root
