@@ -63,17 +63,20 @@ class CompositeVideoRecorder(
             }
             emitStage(RecordingStage.RECORDER_PREPARED, "${profile.width}x${profile.height}@${profile.frameRate}")
 
+            // Samsung/Qualcomm is sensitive to connecting an EGL producer to the
+            // MediaRecorder input Surface before MediaRecorder has entered STARTED.
+            // Start the recorder first, then attach EGL and begin frame delivery.
+            recorder = mediaRecorder
+            active.set(true)
+            mediaRecorder.start()
+            emitStage(RecordingStage.RECORDER_STARTED, null)
+
             val eglRenderer = EglBitmapRenderer(
                 targetSurface = mediaRecorder.surface,
                 width = profile.width,
                 height = profile.height,
             )
-
-            recorder = mediaRecorder
             renderer = eglRenderer
-            active.set(true)
-            mediaRecorder.start()
-            emitStage(RecordingStage.RECORDER_STARTED, null)
 
             val periodMs = (1000L / profile.frameRate).coerceAtLeast(1L)
             frameExecutor = Executors.newSingleThreadScheduledExecutor().also { executor ->
@@ -104,7 +107,6 @@ class CompositeVideoRecorder(
     @Synchronized
     fun stop() {
         if (!active.compareAndSet(true, false)) return
-
         try {
             RecordingStopPlan.steps.forEach { step ->
                 when (step) {
@@ -131,15 +133,9 @@ class CompositeVideoRecorder(
             }
         } catch (error: Throwable) {
             stopFrameDelivery()
-            try {
-                recorder?.release()
-            } catch (_: Throwable) {
-            }
+            try { recorder?.release() } catch (_: Throwable) {}
             recorder = null
-            try {
-                renderer?.release()
-            } catch (_: Throwable) {
-            }
+            try { renderer?.release() } catch (_: Throwable) {}
             renderer = null
             cleanupFailedDestination()
             mainHandler.post { onError("Could not finish recording (${error.javaClass.simpleName}): ${error.message ?: "unknown error"}") }
@@ -150,10 +146,7 @@ class CompositeVideoRecorder(
     fun cancel() {
         active.set(false)
         stopFrameDelivery()
-        try {
-            renderer?.release()
-        } catch (_: Throwable) {
-        }
+        try { renderer?.release() } catch (_: Throwable) {}
         renderer = null
         releaseRecorderQuietly()
         cleanupFailedDestination()
@@ -163,17 +156,12 @@ class CompositeVideoRecorder(
         val executor = frameExecutor
         frameExecutor = null
         executor?.shutdownNow()
-        try {
-            executor?.awaitTermination(500, TimeUnit.MILLISECONDS)
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
-        }
+        try { executor?.awaitTermination(500, TimeUnit.MILLISECONDS) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
     }
 
     private fun createOutputDestination(): OutputDestination {
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val fileName = "Backdrop_$timestamp.mp4"
-
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val values = ContentValues().apply {
                 put(MediaStore.Video.Media.DISPLAY_NAME, fileName)
@@ -181,19 +169,16 @@ class CompositeVideoRecorder(
                 put(MediaStore.Video.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MOVIES}/Backdrop Recorder")
                 put(MediaStore.Video.Media.IS_PENDING, 1)
             }
-            val uri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
-                ?: error("Unable to create video in Gallery")
-            val descriptor = context.contentResolver.openFileDescriptor(uri, "w")
-                ?: run {
-                    context.contentResolver.delete(uri, null, null)
-                    error("Unable to open video output")
-                }
+            val uri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: error("Unable to create video in Gallery")
+            val descriptor = context.contentResolver.openFileDescriptor(uri, "w") ?: run {
+                context.contentResolver.delete(uri, null, null)
+                error("Unable to open video output")
+            }
             outputUri = uri
             outputDescriptor = descriptor
             OutputDestination(descriptor.fileDescriptor)
         } else {
-            val moviesDir = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)
-                ?: error("Movies directory unavailable")
+            val moviesDir = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: error("Movies directory unavailable")
             val file = File(moviesDir, fileName)
             outputFile = file
             OutputDestination(java.io.FileOutputStream(file).fd)
@@ -203,11 +188,7 @@ class CompositeVideoRecorder(
     private fun outputSizeBytes(): Long {
         val uri = outputUri
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && uri != null) {
-            return try {
-                context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
-            } catch (_: Throwable) {
-                -1L
-            }
+            return try { context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L } catch (_: Throwable) { -1L }
         }
         return outputFile?.length() ?: -1L
     }
@@ -215,16 +196,13 @@ class CompositeVideoRecorder(
     private fun finalizeDestination() {
         val uri = outputUri
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && uri != null) {
-            val values = ContentValues().apply {
-                put(MediaStore.Video.Media.IS_PENDING, 0)
-            }
+            val values = ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }
             val updated = context.contentResolver.update(uri, values, null, null)
             check(updated > 0) { "Gallery did not finalize the video entry" }
             outputUri = null
             mainHandler.post { onSaved(uri) }
             return
         }
-
         val file = outputFile
         outputFile = null
         if (file != null) {
@@ -234,11 +212,8 @@ class CompositeVideoRecorder(
                 put(MediaStore.Video.Media.DATA, file.absolutePath)
             }
             val savedUri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
-            if (savedUri != null) {
-                mainHandler.post { onSaved(savedUri) }
-            } else {
-                mainHandler.post { onError("Video recorded but could not be added to Gallery") }
-            }
+            if (savedUri != null) mainHandler.post { onSaved(savedUri) }
+            else mainHandler.post { onError("Video recorded but could not be added to Gallery") }
         }
     }
 
@@ -251,38 +226,17 @@ class CompositeVideoRecorder(
     }
 
     private fun cleanupFailedDestination() {
-        try {
-            outputDescriptor?.close()
-        } catch (_: Throwable) {
-        }
+        try { outputDescriptor?.close() } catch (_: Throwable) {}
         outputDescriptor = null
-
-        outputUri?.let { uri ->
-            try {
-                context.contentResolver.delete(uri, null, null)
-            } catch (_: Throwable) {
-            }
-        }
+        outputUri?.let { uri -> try { context.contentResolver.delete(uri, null, null) } catch (_: Throwable) {} }
         outputUri = null
-
-        outputFile?.let { file ->
-            try {
-                file.delete()
-            } catch (_: Throwable) {
-            }
-        }
+        outputFile?.let { file -> try { file.delete() } catch (_: Throwable) {} }
         outputFile = null
     }
 
     private fun releaseRecorderQuietly() {
-        try {
-            recorder?.reset()
-        } catch (_: Throwable) {
-        }
-        try {
-            recorder?.release()
-        } catch (_: Throwable) {
-        }
+        try { recorder?.reset() } catch (_: Throwable) {}
+        try { recorder?.release() } catch (_: Throwable) {}
         recorder = null
     }
 
