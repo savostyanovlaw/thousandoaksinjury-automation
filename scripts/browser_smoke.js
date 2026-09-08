@@ -9,7 +9,7 @@ const routes = [
   ['newbury-park', '/newbury-park/'],
   ['agoura-hills', '/agoura-hills/'],
   ['russian', '/ru/'],
-  ['not-found', '/does-not-exist-for-smoke-test'],
+  ['not-found', '/404.html'],
 ];
 const widths = [360, 390, 768, 1024, 1440];
 const engines = { chromium, firefox, webkit };
@@ -34,8 +34,7 @@ fs.mkdirSync(outDir, { recursive: true });
         const phoneCount = await page.locator('a[href^="tel:+18182138798"]').count();
         const emailCount = await page.locator('a[href="mailto:attorney@savostyanovlaw.com"]').count();
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
-        const expected404 = slug === 'not-found';
-        if ((!expected404 && status >= 400) || h1Count !== 1 || phoneCount < 1 || emailCount < 1 || overflow || consoleErrors.length) {
+        if (status >= 400 || h1Count !== 1 || phoneCount < 1 || emailCount < 1 || overflow || consoleErrors.length) {
           failures.push({ engineName, slug, width, status, h1Count, phoneCount, emailCount, overflow, consoleErrors });
         }
         if (width === 390 || width === 1440) {
