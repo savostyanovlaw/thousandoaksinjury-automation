@@ -71,6 +71,10 @@ class ValidateSiteTests(unittest.TestCase):
         def mutate(root): (root / "index.html").write_text(page("/", body="No Fee Unless We Win"), encoding="utf-8")
         self.assertTrue(any("banned launch copy" in e for e in self.run_case(mutate)))
 
+    def test_banned_equivalent_fee_copy(self):
+        def mutate(root): (root / "index.html").write_text(page("/", body="No Fee Unless We Recover Compensation"), encoding="utf-8")
+        self.assertTrue(any("banned launch copy" in e for e in self.run_case(mutate)))
+
     def test_russian_page_requires_bilingual_hreflang(self):
         def mutate(root):
             (root / "ru/index.html").write_text(page("/ru/"), encoding="utf-8")
