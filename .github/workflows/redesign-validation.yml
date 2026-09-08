@@ -1,0 +1,29 @@
+name: Premium Redesign Validation
+
+on:
+  push:
+    branches:
+      - claude/premium-redesign-v2
+      - redesign/premium-v2
+  pull_request:
+    branches:
+      - redesign/premium-v2
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run redesign unit tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Run static site validator
+        run: python3 scripts/validate_site.py --root website
