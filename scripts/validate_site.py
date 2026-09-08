@@ -36,12 +36,15 @@ class PageParser(HTMLParser):
         self.noindex = False
         self.hrefs = []
         self.jsonld = []
+        self.hreflangs = {}
         self._jsonld = False
         self._jsonbuf = []
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
         if tag == "h1": self.h1_count += 1
         if tag == "link" and a.get("rel") == "canonical": self.canonical = a.get("href")
+        if tag == "link" and a.get("rel") == "alternate" and a.get("hreflang") and a.get("href"):
+            self.hreflangs[a["hreflang"].lower()] = a["href"]
         if tag == "meta" and a.get("name", "").lower() == "robots" and "noindex" in a.get("content", "").lower(): self.noindex = True
         if tag == "a" and a.get("href"): self.hrefs.append(a["href"])
         if tag == "script" and a.get("type") == "application/ld+json": self._jsonld = True; self._jsonbuf = []
@@ -84,6 +87,21 @@ def validate_site(root: Path):
         low = text.lower()
         for banned in BANNED_COPY:
             if banned in low: errors.append(f"{rel}: banned launch copy: {banned}")
+        if route == "/ru/":
+            if urlparse(parser.hreflangs.get("en", "")).path != "/" or urlparse(parser.hreflangs.get("ru", "")).path != "/ru/":
+                errors.append(f"{rel}: Russian page missing hreflang en/ru alternates")
+            untranslated = (
+                "call or text attorney",
+                "free and confidential",
+                "not a call center",
+                "your thousand oaks attorney",
+                "general information, not statistics",
+                "common accident locations",
+                "do you actually practice in thousand oaks?",
+            )
+            for phrase in untranslated:
+                if phrase in low:
+                    errors.append(f"{rel}: Russian page contains untranslated English copy: {phrase}")
     sitemap = root / "sitemap.xml"
     if not sitemap.exists(): errors.append("missing sitemap.xml")
     else:
