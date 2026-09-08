@@ -25,6 +25,7 @@ BANNED_COPY = (
     "millions recovered",
     "success rate",
     "no fee unless we win",
+    "no fee unless we recover compensation",
     "call or text anytime",
 )
 
