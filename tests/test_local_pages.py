@@ -19,7 +19,7 @@ PREMIUM_MARKERS = (
     'class="hero-portrait',
     'class="trust-strip',
     'class="cinematic-section',
-    'class="attorney-editorial',
+    'attorney-editorial',
     'class="case-review',
     'mailto:attorney@savostyanovlaw.com',
 )
