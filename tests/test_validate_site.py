@@ -24,7 +24,11 @@ def page(route, extra="", body="ok"):
 
 def build_site(root: Path):
     for route, rel in ROUTES.items():
-        p = root / rel; p.parent.mkdir(parents=True, exist_ok=True); p.write_text(page(route), encoding="utf-8")
+        p = root / rel; p.parent.mkdir(parents=True, exist_ok=True)
+        extra = ''
+        if route == "/ru/":
+            extra = '<link rel="alternate" hreflang="en" href="https://thousandoaksinjury.com/"><link rel="alternate" hreflang="ru" href="https://thousandoaksinjury.com/ru/">'
+        p.write_text(page(route, extra=extra), encoding="utf-8")
     urls = "".join(f"<url><loc>https://thousandoaksinjury.com{r}</loc></url>" for r in ROUTES)
     (root / "sitemap.xml").write_text(f'<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>', encoding="utf-8")
     (root / "robots.txt").write_text("User-agent: *\nAllow: /\nSitemap: https://thousandoaksinjury.com/sitemap.xml\n", encoding="utf-8")
@@ -66,6 +70,17 @@ class ValidateSiteTests(unittest.TestCase):
     def test_banned_copy(self):
         def mutate(root): (root / "index.html").write_text(page("/", body="No Fee Unless We Win"), encoding="utf-8")
         self.assertTrue(any("banned launch copy" in e for e in self.run_case(mutate)))
+
+    def test_russian_page_requires_bilingual_hreflang(self):
+        def mutate(root):
+            (root / "ru/index.html").write_text(page("/ru/"), encoding="utf-8")
+        self.assertTrue(any("Russian page missing hreflang" in e for e in self.run_case(mutate)))
+
+    def test_russian_page_flags_known_untranslated_copy(self):
+        def mutate(root):
+            html = page("/ru/", extra='<link rel="alternate" hreflang="en" href="https://thousandoaksinjury.com/"><link rel="alternate" hreflang="ru" href="https://thousandoaksinjury.com/ru/">', body="Call or text attorney Alexey Savostyanov directly.")
+            (root / "ru/index.html").write_text(html, encoding="utf-8")
+        self.assertTrue(any("Russian page contains untranslated English copy" in e for e in self.run_case(mutate)))
 
 
 if __name__ == "__main__":
