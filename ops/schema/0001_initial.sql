@@ -1,0 +1,13 @@
+PRAGMA foreign_keys = ON;
+CREATE TABLE IF NOT EXISTS agents (agent_id TEXT PRIMARY KEY, display_name TEXT NOT NULL, status TEXT NOT NULL, current_task_id TEXT, current_task_summary TEXT, last_heartbeat_at TEXT, last_success_at TEXT, next_run_at TEXT, queued_count INTEGER NOT NULL DEFAULT 0, approval_count INTEGER NOT NULL DEFAULT 0, last_output_url TEXT, last_error_summary TEXT, source_health TEXT NOT NULL DEFAULT 'ok', updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, title TEXT NOT NULL, source TEXT, priority TEXT, status TEXT NOT NULL, created_at TEXT NOT NULL, started_at TEXT, completed_at TEXT, evidence_url TEXT, github_issue_url TEXT, github_pr_url TEXT, result_summary TEXT, failure_summary TEXT, FOREIGN KEY(agent_id) REFERENCES agents(agent_id));
+CREATE INDEX IF NOT EXISTS idx_tasks_agent_status ON tasks(agent_id,status);
+CREATE TABLE IF NOT EXISTS activity_events (event_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, event_type TEXT NOT NULL, summary TEXT NOT NULL, task_id TEXT, external_url TEXT, severity TEXT NOT NULL DEFAULT 'info', created_at TEXT NOT NULL, FOREIGN KEY(agent_id) REFERENCES agents(agent_id));
+CREATE INDEX IF NOT EXISTS idx_events_created ON activity_events(created_at DESC);
+CREATE TABLE IF NOT EXISTS opportunities (id TEXT PRIMARY KEY, query TEXT NOT NULL, page TEXT, clicks REAL NOT NULL DEFAULT 0, impressions REAL NOT NULL DEFAULT 0, ctr REAL NOT NULL DEFAULT 0, position REAL NOT NULL DEFAULT 0, delta_clicks REAL, delta_impressions REAL, delta_ctr REAL, delta_position REAL, branded TEXT, intent_category TEXT, score INTEGER NOT NULL DEFAULT 0, recommended_action TEXT, assigned_agent TEXT, workflow_status TEXT NOT NULL DEFAULT 'new', github_issue_url TEXT, github_pr_url TEXT, observed_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_opps_score ON opportunities(score DESC);
+CREATE TABLE IF NOT EXISTS lead_attribution (id TEXT PRIMARY KEY, created_at TEXT NOT NULL, landing_page TEXT, referrer TEXT, utm_source TEXT, utm_medium TEXT, utm_campaign TEXT, language TEXT, device_class TEXT, delivery_status TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_leads_created ON lead_attribution(created_at DESC);
+CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY, title TEXT NOT NULL, summary TEXT NOT NULL, created_at TEXT NOT NULL, external_url TEXT);
+CREATE TABLE IF NOT EXISTS external_refs (id TEXT PRIMARY KEY, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, provider TEXT NOT NULL, external_id TEXT, external_url TEXT, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, github_login TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL);

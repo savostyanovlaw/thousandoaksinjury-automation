@@ -1,0 +1,1 @@
+import {requireSession} from '../_lib/auth.js';import {all,json} from '../_lib/db.js';export async function onRequestGet(context){const a=await requireSession(context);if(a.response)return a.response;return json({items:await all(context.env.OPS_DB,'SELECT * FROM activity_events ORDER BY created_at DESC LIMIT 100')})}

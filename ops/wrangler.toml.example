@@ -1,0 +1,16 @@
+name = "toi-agent-control-center"
+compatibility_date = "2026-09-11"
+pages_build_output_dir = "./public"
+
+[[d1_databases]]
+binding = "OPS_DB"
+database_name = "toi-ops"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+# Secrets/vars configured in Cloudflare, never committed:
+# GITHUB_CLIENT_ID
+# GITHUB_CLIENT_SECRET
+# OPS_SESSION_SECRET
+# OPS_ALLOWED_GITHUB_LOGIN=savostyanovlaw
+# OPS_INGEST_TOKEN
+# GITHUB_OPS_TOKEN (optional for public repo; recommended for rate limits)
