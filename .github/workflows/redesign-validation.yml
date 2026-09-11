@@ -1,0 +1,48 @@
+name: Premium Redesign Validation
+
+on:
+  push:
+    branches:
+      - claude/premium-redesign-v2
+      - redesign/premium-v2
+  pull_request:
+    branches:
+      - redesign/premium-v2
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run redesign unit tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Run static site validator
+        run: python3 scripts/validate_site.py --root website
+      - name: Install Playwright package and browsers
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium firefox webkit
+      - name: Start local site
+        run: |
+          python3 -m http.server 4173 --directory website >/tmp/premium-redesign-server.log 2>&1 &
+          echo $! > /tmp/premium-redesign-server.pid
+          sleep 2
+      - name: Run cross-browser responsive smoke test
+        run: node scripts/browser_smoke.js
+      - name: Upload browser screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: premium-redesign-browser-screenshots
+          path: artifacts/browser/
+          if-no-files-found: ignore
+          retention-days: 14
