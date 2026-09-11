@@ -18,24 +18,28 @@ class CaseReviewFormContractTests(unittest.TestCase):
         self.assertIn("attorney@savostyanovlaw.com", source)
         self.assertIn("forms.thousandoaksinjury.com", source)
 
-    def test_english_and_russian_forms_post_to_same_endpoint(self):
+    def test_existing_english_and_russian_forms_have_required_intake_fields(self):
         for html in (self.home, self.ru):
             with self.subTest(language="page"):
-                self.assertIn('action="/api/case-review"', html)
-                self.assertIn('method="post"', html)
-                self.assertIn('data-case-review-form', html)
-                self.assertIn('type="submit"', html)
-                self.assertNotIn('data-form-integration="pending"', html)
+                self.assertIn('data-form-integration="pending"', html)
+                for field in ('name="name"', 'name="phone"', 'name="email"', 'name="message"'):
+                    self.assertIn(field, html)
 
-    def test_form_progressive_enhancement_and_status_ui_exist(self):
-        self.assertIn("[data-case-review-form]", self.js)
-        self.assertIn("fetch(form.action", self.js)
-        self.assertIn("data-form-status", self.home)
-        self.assertIn("data-form-status", self.ru)
+    def test_shared_js_enables_and_submits_both_forms(self):
+        for token in (
+            'form[data-form-integration="pending"]',
+            "form.action = '/api/case-review'",
+            "form.method = 'post'",
+            "button.type = 'submit'",
+            "fetch(form.action",
+            "data-form-status",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, self.js)
 
-    def test_honeypot_is_present(self):
-        self.assertIn('name="website"', self.home)
-        self.assertIn('name="website"', self.ru)
+    def test_honeypot_is_added_by_shared_js(self):
+        self.assertIn("honeypot.name = 'website'", self.js)
+        self.assertIn("honeypot.tabIndex = -1", self.js)
 
 
 if __name__ == "__main__":
