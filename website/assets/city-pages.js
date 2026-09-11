@@ -204,3 +204,95 @@ document.addEventListener('DOMContentLoaded', function () {
     if (bannerEl) bannerEl.classList.add('show');
   }
 });
+
+/* Secure Free Case Review form integration for English and Russian pages. */
+document.addEventListener('DOMContentLoaded', function () {
+  var forms = Array.prototype.slice.call(document.querySelectorAll('form[data-form-integration="pending"]'));
+  if (!forms.length) return;
+
+  var isRussian = (document.documentElement.lang || '').toLowerCase().indexOf('ru') === 0;
+  var messages = isRussian ? {
+    ready: 'Защищённая онлайн-форма активна. Не отправляйте срочную информацию, если срок может истечь до ответа фирмы.',
+    sending: 'Отправляем сообщение…',
+    success: 'Спасибо. Ваш запрос отправлен в Savostyanov Law Corporation. Фирма свяжется с вами после рассмотрения сообщения.',
+    error: 'Не удалось отправить сообщение. Позвоните по номеру (818) 213-8798 или напишите на attorney@savostyanovlaw.com.'
+  } : {
+    ready: 'Secure online submission is available. Do not rely on this form for a deadline or other time-sensitive matter.',
+    sending: 'Sending your message…',
+    success: 'Thank you. Your request was sent to Savostyanov Law Corporation. The firm will contact you after reviewing it.',
+    error: 'We could not send your message. Please call (818) 213-8798 or email attorney@savostyanovlaw.com.'
+  };
+
+  forms.forEach(function (form) {
+    form.action = '/api/case-review';
+    form.method = 'post';
+    form.setAttribute('data-form-integration', 'active');
+    form.setAttribute('data-case-review-form', '');
+
+    ['name', 'phone', 'email', 'message'].forEach(function (fieldName) {
+      var field = form.elements[fieldName];
+      if (field) field.required = true;
+    });
+
+    var honeypot = document.createElement('input');
+    honeypot.type = 'text';
+    honeypot.name = 'website';
+    honeypot.autocomplete = 'off';
+    honeypot.tabIndex = -1;
+    honeypot.setAttribute('aria-hidden', 'true');
+    honeypot.style.position = 'absolute';
+    honeypot.style.left = '-10000px';
+    honeypot.style.width = '1px';
+    honeypot.style.height = '1px';
+    honeypot.style.overflow = 'hidden';
+    form.appendChild(honeypot);
+
+    var button = form.querySelector('button');
+    if (button) {
+      button.type = 'submit';
+      button.removeAttribute('aria-disabled');
+      button.disabled = false;
+    }
+
+    var status = form.querySelector('#form-integration-note, #form-status');
+    if (!status) {
+      status = document.createElement('p');
+      status.className = 'fine-print';
+      form.appendChild(status);
+    }
+    status.setAttribute('data-form-status', '');
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+    status.textContent = messages.ready;
+
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      if (!form.reportValidity()) return;
+
+      if (button) button.disabled = true;
+      status.textContent = messages.sending;
+
+      var formData = new FormData(form);
+      formData.set('page', window.location.href);
+      formData.set('language', isRussian ? 'ru' : 'en');
+
+      fetch(form.action, {
+        method: 'POST',
+        headers: { Accept: 'application/json' },
+        body: formData
+      }).then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (payload) {
+          if (!response.ok || !payload.ok) throw new Error('Submission failed');
+          return payload;
+        });
+      }).then(function () {
+        form.reset();
+        status.textContent = messages.success;
+      }).catch(function () {
+        status.textContent = messages.error;
+      }).finally(function () {
+        if (button) button.disabled = false;
+      });
+    });
+  });
+});
