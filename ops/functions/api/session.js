@@ -1,0 +1,1 @@
+import {requireSession} from '../_lib/auth.js';import {json} from '../_lib/db.js';export async function onRequestGet(context){const a=await requireSession(context);if(a.response)return a.response;return json({ok:true,login:a.session.login})}

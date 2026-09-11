@@ -1,0 +1,33 @@
+name: Ops Control Center Validation
+
+on:
+  pull_request:
+    paths:
+      - 'ops/**'
+      - 'docs/ops-control-center-runbook.md'
+      - '.github/workflows/ops-control-center-validation.yml'
+  push:
+    branches:
+      - 'feature/agent-control-center-v1'
+    paths:
+      - 'ops/**'
+      - 'docs/ops-control-center-runbook.md'
+      - '.github/workflows/ops-control-center-validation.yml'
+
+jobs:
+  validate-ops:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run ops unit tests
+        working-directory: ops
+        run: npm test
+      - name: Reject obvious committed secrets
+        run: |
+          if grep -RIE --exclude='*.test.mjs' --exclude='wrangler.toml.example' '(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|RESEND_API_KEY=|OPS_INGEST_TOKEN=[^$])' ops; then
+            echo 'Potential secret detected'
+            exit 1
+          fi
