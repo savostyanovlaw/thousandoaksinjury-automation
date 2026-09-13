@@ -14,7 +14,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('workflow_dispatch:', workflow)
         self.assertIn('issues: write', workflow)
         self.assertIn('contents: read', workflow)
-        self.assertIn('technical_seo_watchdog.py', workflow)
+        self.assertIn('technical_seo_watchdog_runner.py', workflow)
         self.assertIn('reconcile_watchdog_issues.py', workflow)
         self.assertIn('if: always()', workflow)
 
