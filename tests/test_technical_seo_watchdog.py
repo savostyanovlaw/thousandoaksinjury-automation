@@ -4,10 +4,10 @@ from scripts.technical_seo_watchdog import (
     normalize_path,
     parse_robots,
     parse_sitemap,
-    inspect_html,
     classify_case_review_get,
     make_failure,
 )
+from scripts.technical_seo_watchdog_runner import inspect_html
 
 
 class WatchdogCoreTests(unittest.TestCase):
