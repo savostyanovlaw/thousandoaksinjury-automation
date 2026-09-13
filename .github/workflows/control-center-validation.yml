@@ -1,0 +1,68 @@
+name: AI Control Center Validation
+
+on:
+  pull_request:
+    paths:
+      - 'control-center/**'
+      - 'tests/control-center/**'
+      - 'tests/control-center-ui.spec.js'
+      - '.github/workflows/control-center-validation.yml'
+  push:
+    branches:
+      - feature/ai-control-center
+    paths:
+      - 'control-center/**'
+      - 'tests/control-center/**'
+      - 'tests/control-center-ui.spec.js'
+      - '.github/workflows/control-center-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-and-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Control Center runtime dependency
+        run: npm install --prefix control-center --ignore-scripts
+      - name: Build Cloudflare Pages Functions
+        run: npx --yes @cloudflare/pages-functions build control-center/functions --outdir /tmp/control-center-worker --fallback-service ASSETS
+      - name: Run Control Center unit and security tests
+        run: node --test tests/control-center/*.test.cjs
+      - name: Check browser assets for obvious credential literals
+        run: |
+          if grep -RniE '(gh[pousr]_[A-Za-z0-9]{20,}|BEGIN (RSA|OPENSSH|EC) PRIVATE KEY)' control-center --exclude='package-lock.json'; then
+            echo 'Potential credential material detected' >&2
+            exit 1
+          fi
+
+  browser-smoke:
+    runs-on: ubuntu-latest
+    needs: unit-and-security
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Playwright test runner
+        run: npm install --no-save @playwright/test
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Start static Control Center
+        run: python3 -m http.server 4173 --directory control-center > /tmp/control-center-http.log 2>&1 &
+      - name: Run responsive browser smoke tests
+        run: npx playwright test tests/control-center-ui.spec.js --reporter=line
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: control-center-playwright-failure
+          path: |
+            test-results
+            /tmp/control-center-http.log
+          retention-days: 7

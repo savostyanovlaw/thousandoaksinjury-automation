@@ -1,0 +1,6 @@
+const test=require('node:test'); const assert=require('node:assert/strict'); const {pathToFileURL}=require('node:url');
+async function m(){return import(pathToFileURL(process.cwd()+'/control-center/lib/auth.js'));}
+test('rejects missing verified Access context',async()=>{const {requireAuthorizedUser}=await m(); await assert.rejects(()=>requireAuthorizedUser({data:{}},{AUTHORIZED_EMAIL:'savostyanovlaw@gmail.com'}),/Unauthorized/);});
+test('rejects wrong email',async()=>{const {requireAuthorizedUser}=await m(); await assert.rejects(()=>requireAuthorizedUser({data:{cloudflareAccess:{JWT:{payload:{email:'other@example.com'}}}}},{AUTHORIZED_EMAIL:'savostyanovlaw@gmail.com'}),/Unauthorized/);});
+test('accepts exact configured email case-insensitively',async()=>{const {requireAuthorizedUser}=await m(); const u=await requireAuthorizedUser({data:{cloudflareAccess:{JWT:{payload:{email:'SavostyanovLaw@Gmail.com'}}}}},{AUTHORIZED_EMAIL:'savostyanovlaw@gmail.com'}); assert.equal(u.email,'savostyanovlaw@gmail.com');});
+test('fails closed on malformed identity',async()=>{const {requireAuthorizedUser}=await m(); await assert.rejects(()=>requireAuthorizedUser({data:{cloudflareAccess:{JWT:{payload:{email:42}}}}},{AUTHORIZED_EMAIL:'savostyanovlaw@gmail.com'}),/Unauthorized/);});

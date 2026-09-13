@@ -1,0 +1,4 @@
+const test=require('node:test'); const assert=require('node:assert/strict'); const fs=require('node:fs');
+const root=process.cwd()+'/control-center';
+test('private dashboard has robots and security headers',()=>{const h=fs.readFileSync(root+'/_headers','utf8'); assert.match(h,/X-Robots-Tag:\s*noindex, nofollow, noarchive/i); assert.match(h,/frame-ancestors 'none'/i); assert.match(h,/X-Content-Type-Options:\s*nosniff/i); const html=fs.readFileSync(root+'/index.html','utf8'); assert.match(html,/name="robots" content="noindex,nofollow,noarchive"/i);});
+test('Control Center runtime libraries do not import Node-only filesystem or crypto modules',()=>{const registry=fs.readFileSync(root+'/lib/registry.js','utf8'); const approvals=fs.readFileSync(root+'/lib/approvals.js','utf8'); assert.doesNotMatch(registry,/node:fs/); assert.doesNotMatch(approvals,/node:crypto/);});
