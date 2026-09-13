@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <title>AI Control Center — Savostyanov Law</title>
+  <link rel="stylesheet" href="/assets/control.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">SL</span><div><strong>AI Control Center</strong><small>Savostyanov Law</small></div></div>
+      <nav aria-label="Control Center"><a class="active" href="#overview">Overview</a><a href="#agents">Agents</a><a href="#approvals">Approvals</a><a href="#attention">Needs Attention</a><a href="#activity">Activity</a></nav>
+      <div class="sidebar-foot"><span class="dot healthy"></span><span id="connection-label">Private control plane</span></div>
+    </aside>
+    <main>
+      <header class="topbar"><div><p class="eyebrow">PRIVATE OPERATIONS</p><h1>AI Control Center</h1></div><div class="top-actions"><span class="identity">savostyanovlaw@gmail.com</span><button id="refresh" class="ghost">Refresh</button></div></header>
+      <section id="overview" class="hero-card"><div><span class="status-pill" id="overall-status">LOADING</span><h2>Your AI operations, one screen.</h2><p>Monitor agents, review only meaningful exceptions, and approve high-impact actions without exposing production credentials.</p></div><div class="hero-meta"><span>Last refresh</span><strong id="last-refresh">—</strong></div></section>
+      <section class="metrics" aria-label="System summary">
+        <article><span>Healthy</span><strong id="metric-healthy">—</strong></article><article><span>Running</span><strong id="metric-running">—</strong></article><article><span>Needs attention</span><strong id="metric-attention">—</strong></article><article><span>Waiting approval</span><strong id="metric-approval">—</strong></article>
+      </section>
+      <section id="approvals" class="panel"><div class="section-head"><div><p class="eyebrow">OWNER DECISIONS</p><h2>Needs Your Approval</h2></div><span id="approval-count" class="count-badge">0</span></div><div id="approval-list" class="empty-state">No actions are waiting for approval.</div></section>
+      <section id="agents" class="panel"><div class="section-head"><div><p class="eyebrow">AUTOMATION FLEET</p><h2>Agents</h2></div><span class="muted">Safe actions execute here. Production-impacting actions require approval.</span></div><div id="agent-grid" class="agent-grid" aria-live="polite"></div></section>
+      <div class="two-col">
+        <section id="attention" class="panel"><div class="section-head"><div><p class="eyebrow">ACTIONABLE ONLY</p><h2>Needs Attention</h2></div></div><div id="attention-list" class="feed"><div class="empty-state">Loading…</div></div></section>
+        <section id="activity" class="panel"><div class="section-head"><div><p class="eyebrow">NORMALIZED HISTORY</p><h2>Activity</h2></div></div><div id="activity-list" class="feed"><div class="empty-state">Loading…</div></div></section>
+      </div>
+    </main>
+  </div>
+  <dialog id="agent-dialog"><div class="dialog-head"><div><p class="eyebrow">AGENT DETAIL</p><h2 id="dialog-title">Agent</h2></div><button id="dialog-close" class="icon-btn" aria-label="Close">×</button></div><div id="dialog-body"></div></dialog>
+  <dialog id="approval-dialog"><div class="dialog-head"><div><p class="eyebrow">EXACT TARGET CONFIRMATION</p><h2>Review Critical Action</h2></div><button id="approval-close" class="icon-btn" aria-label="Close">×</button></div><div id="approval-dialog-body"></div></dialog>
+  <script type="module" src="/assets/control.js"></script>
+</body>
+</html>
