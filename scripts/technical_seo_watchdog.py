@@ -1,0 +1,401 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import datetime as dt
+from html.parser import HTMLParser
+import json
+import os
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
+
+PRODUCTION_BASE_URL = "https://thousandoaksinjury.com"
+PRODUCTION_HOST = "thousandoaksinjury.com"
+MONITORED_ROUTES = (
+    "/",
+    "/agoura-hills/",
+    "/westlake-village/",
+    "/oak-park/",
+    "/newbury-park/",
+    "/camarillo/",
+    "/simi-valley/",
+    "/ru/",
+)
+SITEMAP_SAMPLE_LIMIT = 12
+USER_AGENT = "TechnicalSEO-Watchdog/1.0 (+https://thousandoaksinjury.com)"
+
+
+@dataclasses.dataclass(frozen=True)
+class Failure:
+    fingerprint: str
+    title: str
+    check: str
+    url: str
+    evidence: str
+    recommended_fix: str
+
+
+@dataclasses.dataclass(frozen=True)
+class RobotsInfo:
+    global_disallow: bool
+    sitemaps: tuple[str, ...]
+
+
+@dataclasses.dataclass(frozen=True)
+class HtmlInfo:
+    canonicals: list[str]
+    noindex: bool
+    has_tel: bool
+    has_mailto: bool
+
+
+@dataclasses.dataclass(frozen=True)
+class FetchResult:
+    url: str
+    final_url: str
+    status: int
+    headers: dict[str, str]
+    text: str
+
+
+class _HtmlInspector(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.canonicals: list[str] = []
+        self.noindex = False
+        self.has_tel = False
+        self.has_mailto = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attrs_dict = {str(k).lower(): (v or "") for k, v in attrs}
+        tag = tag.lower()
+        if tag == "link":
+            rel_tokens = {token.lower() for token in attrs_dict.get("rel", "").split()}
+            if "canonical" in rel_tokens and attrs_dict.get("href"):
+                self.canonicals.append(attrs_dict["href"].strip())
+        elif tag == "meta":
+            name = attrs_dict.get("name", "").strip().lower()
+            content = attrs_dict.get("content", "").lower()
+            if name in {"robots", "googlebot"} and "noindex" in {t.strip() for t in content.replace(";", ",").split(",")}:
+                self.noindex = True
+        elif tag == "a":
+            href = attrs_dict.get("href", "").strip().lower()
+            if href.startswith("tel:"):
+                self.has_tel = True
+            elif href.startswith("mailto:"):
+                self.has_mailto = True
+
+
+def normalize_path(path: str) -> str:
+    if not path:
+        return "/"
+    parsed = urllib.parse.urlsplit(path)
+    raw = parsed.path or "/"
+    if not raw.startswith("/"):
+        raw = "/" + raw
+    if raw != "/" and not raw.endswith("/"):
+        raw += "/"
+    return raw
+
+
+def parse_robots(text: str) -> RobotsInfo:
+    global_disallow = False
+    sitemaps: list[str] = []
+    current_agents: list[str] = []
+    block_is_global = False
+
+    for raw_line in text.splitlines():
+        line = raw_line.split("#", 1)[0].strip()
+        if not line or ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if key == "user-agent":
+            agent = value.lower()
+            if current_agents and not all(a == agent for a in current_agents):
+                current_agents = []
+            current_agents.append(agent)
+            block_is_global = "*" in current_agents
+        elif key == "disallow" and block_is_global and value == "/":
+            global_disallow = True
+        elif key == "sitemap" and value:
+            sitemaps.append(value)
+
+    return RobotsInfo(global_disallow=global_disallow, sitemaps=tuple(sitemaps))
+
+
+def parse_sitemap(xml_text: str) -> list[str]:
+    root = ET.fromstring(xml_text)
+    urls: list[str] = []
+    for elem in root.iter():
+        if elem.tag.rsplit("}", 1)[-1] == "loc" and elem.text:
+            urls.append(elem.text.strip())
+    return urls
+
+
+def inspect_html(html_text: str) -> HtmlInfo:
+    parser = _HtmlInspector()
+    parser.feed(html_text)
+    return HtmlInfo(
+        canonicals=parser.canonicals,
+        noindex=parser.noindex,
+        has_tel=parser.has_tel,
+        has_mailto=parser.has_mailto,
+    )
+
+
+def classify_case_review_get(status: int) -> str | None:
+    if status == 404 or status >= 500:
+        return f"case-review GET returned HTTP {status}"
+    return None
+
+
+def make_failure(check: str, route: str, evidence: str, recommended_fix: str) -> Failure:
+    route_id = normalize_path(route) if route.startswith("/") else route
+    fingerprint = f"watchdog:{check}:{route_id}"
+    title = f"[Technical SEO Watchdog] {check}: {route_id}"
+    url = urllib.parse.urljoin(PRODUCTION_BASE_URL + "/", route.lstrip("/")) if route.startswith("/") else route
+    return Failure(
+        fingerprint=fingerprint,
+        title=title,
+        check=check,
+        url=url,
+        evidence=evidence,
+        recommended_fix=recommended_fix,
+    )
+
+
+def _decode_body(body: bytes, headers: dict[str, str]) -> str:
+    content_type = headers.get("content-type", "")
+    charset = "utf-8"
+    if "charset=" in content_type.lower():
+        charset = content_type.lower().split("charset=", 1)[1].split(";", 1)[0].strip() or "utf-8"
+    try:
+        return body.decode(charset, errors="replace")
+    except LookupError:
+        return body.decode("utf-8", errors="replace")
+
+
+def fetch_url(url: str, timeout: int = 10, retries: int = 1) -> FetchResult:
+    last_error: Exception | None = None
+    for attempt in range(retries + 1):
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT}, method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                headers = {k.lower(): v for k, v in response.headers.items()}
+                body = response.read()
+                result = FetchResult(
+                    url=url,
+                    final_url=response.geturl(),
+                    status=int(response.status),
+                    headers=headers,
+                    text=_decode_body(body, headers),
+                )
+                if result.status >= 500 and attempt < retries:
+                    time.sleep(0.5)
+                    continue
+                return result
+        except urllib.error.HTTPError as exc:
+            headers = {k.lower(): v for k, v in exc.headers.items()} if exc.headers else {}
+            body = exc.read() if hasattr(exc, "read") else b""
+            result = FetchResult(
+                url=url,
+                final_url=exc.geturl() or url,
+                status=int(exc.code),
+                headers=headers,
+                text=_decode_body(body, headers),
+            )
+            if result.status >= 500 and attempt < retries:
+                time.sleep(0.5)
+                continue
+            return result
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            last_error = exc
+            if attempt < retries:
+                time.sleep(0.5)
+                continue
+            raise RuntimeError(f"request failed for {url}: {exc}") from exc
+    raise RuntimeError(f"request failed for {url}: {last_error}")
+
+
+def _canonical_failure(route: str, canonical: str | None, count: int) -> Failure | None:
+    expected_path = normalize_path(route)
+    if count != 1:
+        return make_failure(
+            "canonical",
+            route,
+            f"expected exactly 1 canonical, found {count}",
+            "Ensure the page outputs exactly one canonical link pointing to its production URL.",
+        )
+    parsed = urllib.parse.urlsplit(canonical or "")
+    actual_path = normalize_path(parsed.path)
+    if parsed.scheme.lower() != "https" or parsed.hostname != PRODUCTION_HOST or actual_path != expected_path:
+        return make_failure(
+            "canonical",
+            route,
+            f"canonical={canonical!r}; expected=https://{PRODUCTION_HOST}{expected_path}",
+            "Set the canonical to the HTTPS thousandoaksinjury.com URL for this route.",
+        )
+    return None
+
+
+def _check_html_route(route: str, result: FetchResult, require_contacts: bool = False) -> list[Failure]:
+    failures: list[Failure] = []
+    expected_path = normalize_path(route)
+    final = urllib.parse.urlsplit(result.final_url)
+    if result.status != 200:
+        failures.append(make_failure("route", route, f"HTTP {result.status}", "Restore the route so it returns HTTP 200."))
+        return failures
+    if final.scheme.lower() != "https" or final.hostname != PRODUCTION_HOST or normalize_path(final.path) != expected_path:
+        failures.append(
+            make_failure(
+                "route",
+                route,
+                f"unexpected final URL {result.final_url}",
+                "Remove the unexpected redirect and keep the indexed route on the production HTTPS host.",
+            )
+        )
+    info = inspect_html(result.text)
+    canonical_failure = _canonical_failure(route, info.canonicals[0] if info.canonicals else None, len(info.canonicals))
+    if canonical_failure:
+        failures.append(canonical_failure)
+    x_robots = result.headers.get("x-robots-tag", "").lower()
+    if info.noindex or "noindex" in x_robots:
+        failures.append(
+            make_failure(
+                "noindex",
+                route,
+                f"meta_noindex={info.noindex}; x-robots-tag={result.headers.get('x-robots-tag', '')!r}",
+                "Remove accidental noindex directives from this production indexable page.",
+            )
+        )
+    if require_contacts:
+        if not info.has_tel:
+            failures.append(make_failure("contact-tel", route, "homepage has no tel: link", "Restore a working tel: link on the homepage."))
+        if not info.has_mailto:
+            failures.append(make_failure("contact-email", route, "homepage has no mailto: link", "Restore a working mailto: link on the homepage."))
+    return failures
+
+
+def run_checks(base_url: str = PRODUCTION_BASE_URL) -> list[Failure]:
+    base_url = base_url.rstrip("/")
+    failures: list[Failure] = []
+
+    for route in MONITORED_ROUTES:
+        url = base_url + route
+        try:
+            result = fetch_url(url)
+        except RuntimeError as exc:
+            failures.append(make_failure("route", route, str(exc), "Restore network reachability for this production route."))
+            continue
+        failures.extend(_check_html_route(route, result, require_contacts=(route == "/")))
+
+    robots_url = base_url + "/robots.txt"
+    try:
+        robots_result = fetch_url(robots_url)
+        if robots_result.status != 200:
+            failures.append(make_failure("robots", "/robots.txt", f"HTTP {robots_result.status}", "Restore robots.txt with HTTP 200."))
+        else:
+            robots = parse_robots(robots_result.text)
+            if robots.global_disallow:
+                failures.append(make_failure("robots", "/robots.txt", "User-agent: * is blocked by Disallow: /", "Remove the global crawl block from production robots.txt."))
+            expected_sitemap = base_url + "/sitemap.xml"
+            if expected_sitemap not in robots.sitemaps:
+                failures.append(make_failure("robots-sitemap", "/robots.txt", f"sitemaps={list(robots.sitemaps)!r}", f"Reference {expected_sitemap} from robots.txt."))
+    except RuntimeError as exc:
+        failures.append(make_failure("robots", "/robots.txt", str(exc), "Restore robots.txt reachability."))
+
+    sitemap_urls: list[str] = []
+    sitemap_url = base_url + "/sitemap.xml"
+    try:
+        sitemap_result = fetch_url(sitemap_url)
+        if sitemap_result.status != 200:
+            failures.append(make_failure("sitemap", "/sitemap.xml", f"HTTP {sitemap_result.status}", "Restore sitemap.xml with HTTP 200."))
+        else:
+            try:
+                sitemap_urls = parse_sitemap(sitemap_result.text)
+            except ET.ParseError as exc:
+                failures.append(make_failure("sitemap", "/sitemap.xml", f"invalid XML: {exc}", "Publish a valid XML sitemap."))
+                sitemap_urls = []
+            if not sitemap_urls:
+                failures.append(make_failure("sitemap", "/sitemap.xml", "sitemap contains no URLs", "Publish at least the production homepage and indexable routes in sitemap.xml."))
+            homepage = base_url + "/"
+            if sitemap_urls and homepage not in sitemap_urls:
+                failures.append(make_failure("sitemap-homepage", "/sitemap.xml", f"homepage {homepage} missing", "Add the canonical production homepage to sitemap.xml."))
+            bad_hosts = [u for u in sitemap_urls if urllib.parse.urlsplit(u).scheme != "https" or urllib.parse.urlsplit(u).hostname != PRODUCTION_HOST]
+            if bad_hosts:
+                failures.append(make_failure("sitemap-host", "/sitemap.xml", f"non-production URLs: {bad_hosts[:5]!r}", "Keep sitemap URLs on https://thousandoaksinjury.com only."))
+    except RuntimeError as exc:
+        failures.append(make_failure("sitemap", "/sitemap.xml", str(exc), "Restore sitemap.xml reachability."))
+
+    monitored_set = {base_url + route for route in MONITORED_ROUTES}
+    extra_sample = [u for u in sitemap_urls if u not in monitored_set][:SITEMAP_SAMPLE_LIMIT]
+    for url in extra_sample:
+        parsed = urllib.parse.urlsplit(url)
+        if parsed.hostname != PRODUCTION_HOST or parsed.scheme != "https":
+            continue
+        route = parsed.path or "/"
+        try:
+            result = fetch_url(url)
+        except RuntimeError as exc:
+            failures.append(make_failure("sitemap-sample", route, str(exc), "Restore the sitemap-listed URL or remove it from sitemap.xml."))
+            continue
+        failures.extend(_check_html_route(route, result))
+
+    endpoint_url = base_url + "/api/case-review"
+    try:
+        endpoint = fetch_url(endpoint_url)
+        endpoint_error = classify_case_review_get(endpoint.status)
+        final = urllib.parse.urlsplit(endpoint.final_url)
+        if endpoint_error:
+            failures.append(make_failure("case-review-endpoint", "/api/case-review", endpoint_error, "Restore the Cloudflare Pages Function and verify its production runtime configuration."))
+        elif final.scheme.lower() != "https" or final.hostname != PRODUCTION_HOST or final.path.rstrip("/") != "/api/case-review":
+            failures.append(make_failure("case-review-endpoint", "/api/case-review", f"unexpected final URL {endpoint.final_url}", "Restore the /api/case-review route without redirecting it away from the production function."))
+    except RuntimeError as exc:
+        failures.append(make_failure("case-review-endpoint", "/api/case-review", str(exc), "Restore the Cloudflare Pages Function reachability."))
+
+    unique: dict[str, Failure] = {}
+    for failure in failures:
+        unique[failure.fingerprint] = failure
+    return list(unique.values())
+
+
+def _utc_now_iso() -> str:
+    return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def write_report(path: str, base_url: str, failures: list[Failure]) -> None:
+    payload = {
+        "base_url": base_url.rstrip("/"),
+        "checked_at": _utc_now_iso(),
+        "healthy": not failures,
+        "failures": [dataclasses.asdict(f) for f in failures],
+    }
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2, ensure_ascii=False)
+        handle.write("\n")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Check live Thousand Oaks Injury technical SEO health.")
+    parser.add_argument("--base-url", default=PRODUCTION_BASE_URL)
+    parser.add_argument("--output", default="artifacts/technical-seo-watchdog/report.json")
+    args = parser.parse_args()
+    failures = run_checks(args.base_url)
+    write_report(args.output, args.base_url, failures)
+    if failures:
+        for failure in failures:
+            print(f"FAIL {failure.fingerprint}: {failure.evidence}")
+        return 1
+    print("Technical SEO Watchdog: healthy")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
