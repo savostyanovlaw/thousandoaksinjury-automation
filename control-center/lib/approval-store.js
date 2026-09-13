@@ -24,3 +24,15 @@ export async function consumeApproval(db,id){
   if(!result?.meta?.changes) throw new Error('Approval already consumed');
   return now;
 }
+export async function claimCommandIdempotency(db,key,agentId,command){
+  if(!db?.prepare) throw new Error('Command idempotency storage unavailable');
+  const now=new Date().toISOString();
+  try{
+    await db.prepare("INSERT INTO command_idempotency (idempotency_key, agent_id, command, created_at) VALUES (?, ?, ?, ?)").bind(key,agentId,command,now).run();
+    return true;
+  }catch(error){
+    const message=String(error?.message||error);
+    if(/unique|constraint|primary/i.test(message)) return false;
+    throw error;
+  }
+}
