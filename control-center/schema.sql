@@ -27,3 +27,10 @@ CREATE TABLE IF NOT EXISTS audit_events (
   metadata_json TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_events(timestamp DESC);
+CREATE TABLE IF NOT EXISTS command_idempotency (
+  idempotency_key TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL,
+  command TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_command_idempotency_created ON command_idempotency(created_at DESC);
