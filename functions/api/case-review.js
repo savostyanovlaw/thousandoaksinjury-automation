@@ -17,7 +17,8 @@ function clean(value, maxLength) {
 }
 
 function validEmail(value) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  const match = /^([A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+)@([A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+)$/.exec(value);
+  return !!match && !match[1].startsWith('.') && !match[1].endsWith('.') && !match[1].includes('..');
 }
 
 function validPhone(value) {
