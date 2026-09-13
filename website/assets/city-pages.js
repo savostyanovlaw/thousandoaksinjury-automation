@@ -237,7 +237,8 @@ document.addEventListener('DOMContentLoaded', function () {
       return digits.length >= 7 && digits.length <= 15;
     }
     function validEmail(value) {
-      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+      var match = /^([A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+)@([A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+)$/.exec(value);
+      return !!match && match[1].charAt(0) !== '.' && match[1].slice(-1) !== '.' && match[1].indexOf('..') === -1;
     }
     function applyCustomValidation(field) {
       field.setCustomValidity('');
