@@ -4,10 +4,10 @@ function canonical(value){
   return JSON.stringify(value);
 }
 async function sha256(text){
-  if(globalThis.crypto?.subtle){
-    const bytes=new TextEncoder().encode(text); const digest=await crypto.subtle.digest('SHA-256',bytes); return [...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
-  }
-  const {createHash}=await import('node:crypto'); return createHash('sha256').update(text).digest('hex');
+  if(!globalThis.crypto?.subtle) throw new Error('Web Crypto unavailable');
+  const bytes=new TextEncoder().encode(text);
+  const digest=await crypto.subtle.digest('SHA-256',bytes);
+  return [...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
 }
 export async function targetHash(payload){ return sha256(canonical(payload)); }
 export function assertApprovalExecutable(record,currentTarget){
