@@ -36,7 +36,7 @@ jobs:
         id: check
         continue-on-error: true
         run: |
-          python3 scripts/technical_seo_watchdog.py \
+          python3 scripts/technical_seo_watchdog_runner.py \
             --base-url https://thousandoaksinjury.com \
             --output artifacts/technical-seo-watchdog/report.json
 
