@@ -24,10 +24,14 @@ export function createGitHubAdapter({token,fetchImpl=fetch}){
       }
     },
     async listAgentIssues(agent){
-      if(!agent?.issueLabel) return [];
+      const marker=agent?.issueLabel || agent?.id;
+      if(!marker) return [];
       try{
-        const data=await json(`https://api.github.com/repos/${REPO}/issues?state=open&labels=${encodeURIComponent(agent.issueLabel)}&per_page=50`);
-        return (Array.isArray(data)?data:[]).filter(x=>!x.pull_request).map(x=>({number:x.number,title:x.title,url:x.html_url,state:x.state,updatedAt:x.updated_at}));
+        const data=await json(`https://api.github.com/repos/${REPO}/issues?state=open&per_page=100`);
+        return (Array.isArray(data)?data:[])
+          .filter(x=>!x.pull_request)
+          .filter(x=>`${x.title||''}\n${x.body||''}`.toLowerCase().includes(String(marker).toLowerCase()))
+          .map(x=>({number:x.number,title:x.title,url:x.html_url,state:x.state,updatedAt:x.updated_at}));
       }catch{return [];}
     },
     async listAgentPulls(agent){
