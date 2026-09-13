@@ -1,0 +1,6 @@
+{
+  "name":"savostyanov-law-ai-control-center",
+  "private":true,
+  "type":"module",
+  "dependencies":{"@cloudflare/pages-plugin-cloudflare-access":"^1.0.5"}
+}
