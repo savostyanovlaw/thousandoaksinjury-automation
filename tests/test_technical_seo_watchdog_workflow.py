@@ -1,4 +1,6 @@
 import pathlib
+import subprocess
+import sys
 import unittest
 
 
@@ -17,6 +19,16 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('technical_seo_watchdog_runner.py', workflow)
         self.assertIn('reconcile_watchdog_issues.py', workflow)
         self.assertIn('if: always()', workflow)
+
+    def test_watchdog_runner_can_execute_as_script(self):
+        result = subprocess.run(
+            [sys.executable, 'scripts/technical_seo_watchdog_runner.py', '--help'],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('Check live Thousand Oaks Injury technical SEO health.', result.stdout)
 
 
 if __name__ == '__main__':
