@@ -7,6 +7,7 @@ on:
       - redesign/premium-v2
   pull_request:
     branches:
+      - main
       - redesign/premium-v2
 
 permissions:
@@ -25,6 +26,8 @@ jobs:
           python-version: '3.12'
       - name: Run redesign unit tests
         run: python3 -m unittest discover -s tests -v
+      - name: Run case-review endpoint tests
+        run: node --test tests/case-review-endpoint.test.mjs
       - name: Run static site validator
         run: python3 scripts/validate_site.py --root website
       - name: Install Playwright package and browsers
@@ -38,6 +41,8 @@ jobs:
           sleep 2
       - name: Run cross-browser responsive smoke test
         run: node scripts/browser_smoke.js
+      - name: Run cross-browser form payload smoke test
+        run: node scripts/form_browser_smoke.js
       - name: Upload browser screenshots
         if: always()
         uses: actions/upload-artifact@v4
