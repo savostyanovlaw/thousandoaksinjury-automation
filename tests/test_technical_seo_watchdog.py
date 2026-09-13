@@ -31,6 +31,11 @@ class WatchdogCoreTests(unittest.TestCase):
         self.assertTrue(result.has_tel)
         self.assertTrue(result.has_mailto)
 
+    def test_html_accepts_cloudflare_protected_email_link(self):
+        html = """<html><body><a href='/cdn-cgi/l/email-protection' class='__cf_email__' data-cfemail='001122'>attorney@example.com</a></body></html>"""
+        result = inspect_html(html)
+        self.assertTrue(result.has_mailto)
+
     def test_case_review_get_accepts_non_5xx_response(self):
         self.assertIsNone(classify_case_review_get(200))
         self.assertIsNone(classify_case_review_get(405))
