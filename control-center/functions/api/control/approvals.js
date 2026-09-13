@@ -3,7 +3,7 @@ import { requireAuthorizedUser } from '../../../lib/auth.js';
 import { targetHash } from '../../../lib/approvals.js';
 import { insertApproval, listPendingApprovals } from '../../../lib/approval-store.js';
 import { writeAudit } from '../../../lib/audit.js';
-import { assertExactFields, errorResponse, jsonResponse, parseJson } from '../../../lib/http.js';
+import { assertExactFields, errorResponse, jsonResponse, parseJson, requireSameOrigin } from '../../../lib/http.js';
 
 export async function createApprovalRequest({agents,body,idFactory=()=>crypto.randomUUID(),now=()=>new Date().toISOString()}){
   assertExactFields(body,['agentId','action','targetType','targetId','targetRevision'],['agentId','action','targetType','targetId','targetRevision']);
@@ -23,7 +23,7 @@ export async function onRequestGet(context){
 
 export async function onRequestPost(context){
   try{
-    const user=await requireAuthorizedUser(context,context.env);
+    const user=await requireAuthorizedUser(context,context.env); requireSameOrigin(context.request);
     const body=await parseJson(context.request);
     const agents=await loadRegistry();
     const row=await createApprovalRequest({agents,body});

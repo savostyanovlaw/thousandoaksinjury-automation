@@ -9,18 +9,19 @@ export function createGitHubAdapter({token,fetchImpl=fetch}){
   }
   return {
     async getWorkflowState(agent){
-      if(!agent?.deployed || !agent?.workflows?.RUN_NOW) return {stale:false,lastSuccess:false,currentFailure:false,running:false,lastRun:null};
+      if(!agent?.deployed || !agent?.workflows?.RUN_NOW) return {stale:false,lastSuccess:false,currentFailure:false,running:false,lastRun:null,recentRuns:[]};
       try{
         const data=await json(`https://api.github.com/repos/${REPO}/actions/workflows/${encodeURIComponent(agent.workflows.RUN_NOW)}/runs?per_page=10`);
         const runs=Array.isArray(data?.workflow_runs)?data.workflow_runs:[];
         const latest=runs[0]||null;
-        if(!latest) return {stale:false,lastSuccess:false,currentFailure:false,running:false,lastRun:null};
+        if(!latest) return {stale:false,lastSuccess:false,currentFailure:false,running:false,lastRun:null,recentRuns:[]};
         const running=['queued','in_progress','waiting','requested','pending'].includes(latest.status);
         const currentFailure=latest.status==='completed' && !['success','neutral','skipped'].includes(latest.conclusion);
         const lastSuccess=latest.status==='completed' && latest.conclusion==='success';
-        return {stale:false,lastSuccess,currentFailure,running,lastRun:{id:latest.id,status:latest.status,conclusion:latest.conclusion,createdAt:latest.created_at,url:latest.html_url}};
-      }catch{
-        return {stale:true,lastSuccess:false,currentFailure:false,running:false,lastRun:null,error:'GitHub temporarily unavailable'};
+        const recentRuns=runs.slice(0,10).map(run=>({id:run.id,status:run.status,conclusion:run.conclusion,createdAt:run.created_at,url:run.html_url}));
+        return {stale:false,lastSuccess,currentFailure,running,lastRun:recentRuns[0],recentRuns};
+      }catch(error){
+        return {stale:true,lastSuccess:false,currentFailure:false,running:false,lastRun:null,recentRuns:[],error:'GitHub temporarily unavailable'};
       }
     },
     async listAgentIssues(agent){

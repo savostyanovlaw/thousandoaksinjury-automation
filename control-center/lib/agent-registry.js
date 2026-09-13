@@ -20,7 +20,11 @@ export const AGENTS = [
         "autonomy": "GREEN"
       }
     ],
-    "issueLabel": "technical-seo-watchdog"
+    "issueLabel": "technical-seo-watchdog",
+    "scheduleUtcHours": [
+      0,
+      12
+    ]
   },
   {
     "id": "opportunity-finder",

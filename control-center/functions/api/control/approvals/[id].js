@@ -3,7 +3,7 @@ import { createGitHubAdapter } from '../../../../lib/github.js';
 import { targetHash, assertApprovalExecutable } from '../../../../lib/approvals.js';
 import { getApproval, decideApproval, consumeApproval } from '../../../../lib/approval-store.js';
 import { writeAudit } from '../../../../lib/audit.js';
-import { assertExactFields, errorResponse, jsonResponse, parseJson } from '../../../../lib/http.js';
+import { assertExactFields, errorResponse, jsonResponse, parseJson, requireSameOrigin } from '../../../../lib/http.js';
 
 export async function executeApprovalDecision({record,decision,user,db,github}){
   if(!record) throw new Error('Approval not found');
@@ -27,7 +27,7 @@ export async function executeApprovalDecision({record,decision,user,db,github}){
 
 export async function onRequestPost(context){
   try{
-    const user=await requireAuthorizedUser(context,context.env); const body=await parseJson(context.request); assertExactFields(body,['decision'],['decision']);
+    const user=await requireAuthorizedUser(context,context.env); requireSameOrigin(context.request); const body=await parseJson(context.request); assertExactFields(body,['decision'],['decision']);
     const record=await getApproval(context.env.CONTROL_DB,context.params.id); const github=createGitHubAdapter({token:context.env.GITHUB_TOKEN});
     const result=await executeApprovalDecision({record,decision:body.decision,user,db:context.env.CONTROL_DB,github});
     await writeAudit(context.env.CONTROL_DB,{timestamp:new Date().toISOString(),actor:user.email,agentId:record.agentId,action:record.action,targetType:record.targetType,targetId:record.targetId,targetRevision:record.targetRevision,autonomy:'RED',result:body.decision==='APPROVE'?'approved-executed':'rejected',approvalId:record.id,githubPrNumber:Number(record.targetId)});
