@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { AGENTS } from './agent-registry.js';
 const AUTONOMY = new Set(['GREEN','YELLOW','RED']);
 export function validateRegistry(agents){
   if(!Array.isArray(agents)) throw new Error('Registry must be an array');
@@ -15,11 +15,10 @@ export function validateRegistry(agents){
   }
   return agents;
 }
-export async function loadRegistry(fileUrl = new URL('../agent-registry.json', import.meta.url)){
-  const text = await readFile(fileUrl,'utf8');
-  return validateRegistry(JSON.parse(text));
+export async function loadRegistry(){
+  return validateRegistry(structuredClone(AGENTS));
 }
-export async function getAgent(id,fileUrl){
-  const agents=await loadRegistry(fileUrl);
+export async function getAgent(id){
+  const agents=await loadRegistry();
   return agents.find(a=>a.id===id) ?? null;
 }
