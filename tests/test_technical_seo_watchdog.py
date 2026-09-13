@@ -4,10 +4,10 @@ from scripts.technical_seo_watchdog import (
     normalize_path,
     parse_robots,
     parse_sitemap,
-    inspect_html,
     classify_case_review_get,
     make_failure,
 )
+from scripts.technical_seo_watchdog_runner import inspect_html
 
 
 class WatchdogCoreTests(unittest.TestCase):
@@ -29,6 +29,11 @@ class WatchdogCoreTests(unittest.TestCase):
         self.assertEqual(result.canonicals, ["https://thousandoaksinjury.com/"])
         self.assertFalse(result.noindex)
         self.assertTrue(result.has_tel)
+        self.assertTrue(result.has_mailto)
+
+    def test_html_accepts_cloudflare_protected_email_link(self):
+        html = """<html><body><a href='/cdn-cgi/l/email-protection' class='__cf_email__' data-cfemail='001122'>attorney@example.com</a></body></html>"""
+        result = inspect_html(html)
         self.assertTrue(result.has_mailto)
 
     def test_case_review_get_accepts_non_5xx_response(self):
