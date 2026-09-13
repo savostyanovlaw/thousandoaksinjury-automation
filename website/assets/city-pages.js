@@ -215,12 +215,14 @@ document.addEventListener('DOMContentLoaded', function () {
     ready: 'Защищённая онлайн-форма активна. Не отправляйте срочную информацию, если срок может истечь до ответа фирмы.',
     sending: 'Отправляем сообщение…',
     success: 'Спасибо. Ваш запрос отправлен в Savostyanov Law Corporation. Фирма свяжется с вами после рассмотрения сообщения.',
-    error: 'Не удалось отправить сообщение. Позвоните по номеру (818) 213-8798 или напишите на attorney@savostyanovlaw.com.'
+    error: 'Не удалось отправить сообщение. Позвоните по номеру (818) 213-8798 или напишите на attorney@savostyanovlaw.com.',
+    validation: 'Проверьте обязательные поля и исправьте выделенное поле.'
   } : {
     ready: 'Secure online submission is available. Do not rely on this form for a deadline or other time-sensitive matter.',
     sending: 'Sending your message…',
     success: 'Thank you. Your request was sent to Savostyanov Law Corporation. The firm will contact you after reviewing it.',
-    error: 'We could not send your message. Please call (818) 213-8798 or email attorney@savostyanovlaw.com.'
+    error: 'We could not send your message. Please call (818) 213-8798 or email attorney@savostyanovlaw.com.',
+    validation: 'Please review the required fields and correct the highlighted field.'
   };
 
   forms.forEach(function (form) {
@@ -229,9 +231,29 @@ document.addEventListener('DOMContentLoaded', function () {
     form.setAttribute('data-form-integration', 'active');
     form.setAttribute('data-case-review-form', '');
 
+    var fieldLimits = { name: 120, phone: 60, email: 254, message: 6000 };
+    function validPhone(value) {
+      var digits = value.normalize('NFKC').replace(/\D/g, '');
+      return digits.length >= 7 && digits.length <= 15;
+    }
+    function validEmail(value) {
+      var match = /^([A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+)@([A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+)$/.exec(value);
+      return !!match && match[1].charAt(0) !== '.' && match[1].slice(-1) !== '.' && match[1].indexOf('..') === -1;
+    }
+    function applyCustomValidation(field) {
+      field.setCustomValidity('');
+      var value = field.value.trim();
+      if (field.name === 'phone' && value && !validPhone(value)) field.setCustomValidity(messages.validation);
+      if (field.name === 'email' && value && !validEmail(value)) field.setCustomValidity(messages.validation);
+    }
+
     ['name', 'phone', 'email', 'message'].forEach(function (fieldName) {
       var field = form.elements[fieldName];
-      if (field) field.required = true;
+      if (field) {
+        field.required = true;
+        field.maxLength = fieldLimits[fieldName];
+        field.addEventListener('input', function () { field.setCustomValidity(''); });
+      }
     });
 
     var honeypot = document.createElement('input');
@@ -267,6 +289,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     form.addEventListener('submit', function (event) {
       event.preventDefault();
+      Array.prototype.forEach.call(form.elements, function (field) {
+        if (field.setCustomValidity) applyCustomValidation(field);
+      });
       if (!form.reportValidity()) return;
 
       if (button) button.disabled = true;
@@ -282,14 +307,31 @@ document.addEventListener('DOMContentLoaded', function () {
         body: formData
       }).then(function (response) {
         return response.json().catch(function () { return {}; }).then(function (payload) {
-          if (!response.ok || !payload.ok) throw new Error('Submission failed');
+          if (!response.ok || !payload.ok) {
+            var failure = new Error('Submission failed');
+            failure.payload = payload;
+            throw failure;
+          }
           return payload;
         });
       }).then(function () {
         form.reset();
         status.textContent = messages.success;
-      }).catch(function () {
-        status.textContent = messages.error;
+      }).catch(function (error) {
+        var fields = error.payload && error.payload.code === 'VALIDATION_ERROR' && error.payload.fields;
+        if (fields) {
+          var firstInvalidField = null;
+          Object.keys(fields).forEach(function (fieldName) {
+            var field = form.elements[fieldName];
+            if (!field || !field.setCustomValidity) return;
+            field.setCustomValidity(messages.validation);
+            if (!firstInvalidField) firstInvalidField = field;
+          });
+          status.textContent = messages.validation;
+          if (firstInvalidField) firstInvalidField.reportValidity();
+        } else {
+          status.textContent = messages.error;
+        }
       }).finally(function () {
         if (button) button.disabled = false;
       });
