@@ -79,6 +79,15 @@ test('returns machine-readable errors for missing and invalid required fields', 
   assert.equal(result.calls.length, 0);
 });
 
+test('rejects malformed email addresses before delivery', async () => {
+  for (const email of ['a,b@example.com', 'a@example..com', 'a@example.com.', 'a<z@example.com', '.a@example.com']) {
+    const result = await invoke(multipart(validFields({ email })));
+    assert.equal(result.response.status, 400, email);
+    assert.deepEqual(result.payload.fields, { email: 'invalid' }, email);
+    assert.equal(result.calls.length, 0, email);
+  }
+});
+
 test('rejects an unparseable request body without calling Resend', async () => {
   const request = new Request('https://thousandoaksinjury.com/api/case-review', {
     method: 'POST',
