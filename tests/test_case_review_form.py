@@ -9,6 +9,11 @@ class CaseReviewFormContractTests(unittest.TestCase):
         self.ru = (self.root / "website" / "ru" / "index.html").read_text(encoding="utf-8")
         self.js = (self.root / "website" / "assets" / "city-pages.js").read_text(encoding="utf-8")
         self.function_path = self.root / "functions" / "api" / "case-review.js"
+        self.form_pages = [
+            path.read_text(encoding="utf-8")
+            for path in (self.root / "website").glob("**/*.html")
+            if 'data-form-integration="pending"' in path.read_text(encoding="utf-8")
+        ]
 
     def test_pages_function_exists_and_uses_server_side_resend_secret(self):
         self.assertTrue(self.function_path.exists(), "Cloudflare Pages Function is missing")
@@ -19,7 +24,8 @@ class CaseReviewFormContractTests(unittest.TestCase):
         self.assertIn("forms.thousandoaksinjury.com", source)
 
     def test_existing_english_and_russian_forms_have_required_intake_fields(self):
-        for html in (self.home, self.ru):
+        self.assertEqual(len(self.form_pages), 9)
+        for html in self.form_pages:
             with self.subTest(language="page"):
                 self.assertIn('data-form-integration="pending"', html)
                 for field in ('name="name"', 'name="phone"', 'name="email"', 'name="message"'):
@@ -40,6 +46,14 @@ class CaseReviewFormContractTests(unittest.TestCase):
     def test_honeypot_is_added_by_shared_js(self):
         self.assertIn("honeypot.name = 'website'", self.js)
         self.assertIn("honeypot.tabIndex = -1", self.js)
+
+    def test_frontend_uses_machine_readable_validation_errors(self):
+        self.assertIn("payload.code === 'VALIDATION_ERROR'", self.js)
+        self.assertIn("payload.fields", self.js)
+        self.assertIn("field.setCustomValidity(messages.validation)", self.js)
+        self.assertIn("field.addEventListener('input'", self.js)
+        self.assertIn("field.maxLength = fieldLimits[fieldName]", self.js)
+        self.assertIn("applyCustomValidation(field)", self.js)
 
 
 if __name__ == "__main__":
