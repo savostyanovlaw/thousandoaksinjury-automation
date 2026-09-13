@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import dataclasses
 
-from scripts import technical_seo_watchdog as core
+try:
+    from scripts import technical_seo_watchdog as core
+except ModuleNotFoundError:
+    import technical_seo_watchdog as core
 
 _CORE_INSPECT_HTML = core.inspect_html
 
