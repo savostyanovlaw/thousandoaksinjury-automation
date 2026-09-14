@@ -1,4 +1,5 @@
 import { createSessionToken, sessionCookie, clearSessionCookie, requireAuthorizedUser, verifyCredentials } from '../lib/auth.js';
+import { createGitHubAdapter } from '../lib/github.js';
 
 function loginPage(error=''){
   const message=error ? `<p role="alert">${error}</p>` : '';
@@ -9,6 +10,10 @@ function htmlResponse(html,status=200,headers={}){
   return new Response(html,{status,headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-robots-tag':'noindex, nofollow, noarchive',...headers}});
 }
 
+function jsonNoStore(value,status=200){
+  return new Response(JSON.stringify(value),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-robots-tag':'noindex, nofollow, noarchive'}});
+}
+
 function isSameOrigin(request){
   const origin=request.headers.get('origin');
   return Boolean(origin && origin===new URL(request.url).origin);
@@ -17,6 +22,12 @@ function isSameOrigin(request){
 export async function onRequest(context){
   const {request,env}=context;
   const url=new URL(request.url);
+
+  if(url.pathname==='/auth/github-diagnostic' && request.method==='GET'){
+    const github=createGitHubAdapter({token:env.GITHUB_TOKEN});
+    const result=await github.diagnoseCredential('technical-seo-watchdog.yml');
+    return jsonNoStore(result);
+  }
 
   if(url.pathname==='/auth/login' && request.method==='GET') return htmlResponse(loginPage());
 
