@@ -1,5 +1,5 @@
-import { requireAuthorizedUser, requireSameOrigin } from '../../../lib/auth.js';
-import { json } from '../../../lib/http.js';
+import { requireAuthorizedUser } from '../../../lib/auth.js';
+import { jsonResponse, requireSameOrigin } from '../../../lib/http.js';
 
 const ACCOUNT_ID = '8c69b02e709c79d82d43029a2c5a4c54';
 const PROJECT = 'slc-ai-control';
@@ -25,9 +25,9 @@ async function cf(env, path, init = {}) {
 
 export async function onRequestGet(context) {
   try {
-    const identity = requireAuthorizedUser(context);
+    const identity = await requireAuthorizedUser(context, context.env);
     const project = await cf(context.env, `/accounts/${ACCOUNT_ID}/pages/projects/${PROJECT}`);
-    return json({
+    return jsonResponse({
       ok: true,
       actor: identity.email,
       project: {
@@ -39,28 +39,26 @@ export async function onRequestGet(context) {
       tokenConfigured: true
     });
   } catch (error) {
-    return json({ ok: false, error: error.message }, { status: 500 });
+    return jsonResponse({ ok: false, error: error.message }, Number(error?.status) || 500);
   }
 }
 
 export async function onRequestPost(context) {
   try {
     requireSameOrigin(context.request);
-    const identity = requireAuthorizedUser(context);
+    const identity = await requireAuthorizedUser(context, context.env);
     const payload = await context.request.json().catch(() => ({}));
     if (payload.action !== 'enable-preview-access') {
-      return json({ ok: false, error: 'Unsupported bootstrap action' }, { status: 400 });
+      return jsonResponse({ ok: false, error: 'Unsupported bootstrap action' }, 400);
     }
 
-    // This endpoint is deliberately capability-scoped: it can only change the
-    // Access setting on the dedicated Control Center Pages project.
     const project = await cf(context.env, `/accounts/${ACCOUNT_ID}/pages/projects/${PROJECT}`, {
       method: 'PATCH',
       body: JSON.stringify({ deployment_configs: { preview: { env_vars: {} } } })
     });
 
-    return json({ ok: true, actor: identity.email, project: project.name });
+    return jsonResponse({ ok: true, actor: identity.email, project: project.name });
   } catch (error) {
-    return json({ ok: false, error: error.message }, { status: 500 });
+    return jsonResponse({ ok: false, error: error.message }, Number(error?.status) || 500);
   }
 }
