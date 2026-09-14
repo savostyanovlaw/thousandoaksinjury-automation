@@ -1,5 +1,6 @@
 const SESSION_COOKIE = 'slc_session';
 const DEFAULT_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const MIN_PASSWORD_LENGTH = 20;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -47,7 +48,7 @@ function configuredEmail(env){
 export async function verifyCredentials(env,email,password){
   const expectedEmail=configuredEmail(env);
   const expectedPassword=typeof env?.CONTROL_AUTH_PASSWORD === 'string' ? env.CONTROL_AUTH_PASSWORD : '';
-  if(!expectedEmail || !expectedPassword || typeof email !== 'string' || typeof password !== 'string') return false;
+  if(!expectedEmail || expectedPassword.length < MIN_PASSWORD_LENGTH || typeof email !== 'string' || typeof password !== 'string') return false;
   const emailOk=await constantTimeStringEqual(email.trim().toLowerCase(),expectedEmail);
   const passwordOk=await constantTimeStringEqual(password,expectedPassword);
   return emailOk && passwordOk;
