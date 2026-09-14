@@ -8,9 +8,7 @@ export async function onRequestGet(context) {
       ok: true,
       capabilities: [
         'verify-cloudflare-token',
-        'read-control-center-pages-project',
-        'read-control-center-access-info',
-        'ensure-control-center-access'
+        'read-control-center-pages-project'
       ]
     });
   } catch (error) {

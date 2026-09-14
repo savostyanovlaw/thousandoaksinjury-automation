@@ -1,1 +1,0 @@
-{"application":{"name":"SLC AI Control Center","domain":"slc-ai-control.pages.dev","type":"self_hosted"},"policy":{"name":"Allow Savostyanov Law owner only","decision":"allow","include":[{"email":{"email":"savostyanovlaw@gmail.com"}}]}}
