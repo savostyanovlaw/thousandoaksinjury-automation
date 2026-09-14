@@ -1,0 +1,1 @@
+const test=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');const s=fs.readFileSync(path.join(process.cwd(),'control-center/functions/api/bootstrap/.capability-scope'),'utf8');test('scope marker excludes DNS and generic proxy',()=>{assert.match(s,/generic_proxy=false/);assert.match(s,/dns=false/);});
