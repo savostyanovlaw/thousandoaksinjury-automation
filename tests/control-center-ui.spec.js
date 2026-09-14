@@ -33,6 +33,13 @@ test('cockpit shows safe GitHub diagnostics inline', async ({ page }) => {
   await expect(page.getByText('GitHub auth 200 · repo 200 · workflow 403')).toBeVisible();
 });
 
+test('cockpit shows GitHub error message without exposing credentials', async ({ page }) => {
+  const badCreds={...state,githubDiagnostics:{configured:true,authStatus:403,repoStatus:403,workflowStatus:403,authMessage:'Bad credentials'}};
+  await mockApi(page,badCreds); await page.goto('http://127.0.0.1:4173/');
+  await expect(page.getByText('GitHub auth 403 · repo 403 · workflow 403 · Bad credentials')).toBeVisible();
+  await expect(page.locator('body')).not.toContainText(/Bearer never|GITHUB_TOKEN/);
+});
+
 test('mobile cockpit remains usable', async ({ page }) => {
   await page.setViewportSize({width:390,height:844}); await mockApi(page); await page.goto('http://127.0.0.1:4173/');
   await expect(page.locator('.agent-card')).toHaveCount(10);
