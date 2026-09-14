@@ -16,8 +16,9 @@ test('Cloudflare token remains server side', () => {
   assert.doesNotMatch(source, /token:\s*env\.CLOUDFLARE_API_TOKEN/);
 });
 
-test('writes require same origin and registered action', () => {
-  assert.match(source, /requireSameOrigin\(context\.request\)/);
-  assert.match(source, /payload\.action !== 'enable-preview-access'/);
-  assert.doesNotMatch(source, /payload\.url|payload\.path|payload\.method/);
+test('Cloudflare bootstrap is read-only and cannot mutate Pages configuration', () => {
+  assert.doesNotMatch(source, /onRequestPost/);
+  assert.doesNotMatch(source, /method:\s*['\"]PATCH['\"]/);
+  assert.doesNotMatch(source, /enable-preview-access/);
+  assert.doesNotMatch(source, /deployment_configs/);
 });
