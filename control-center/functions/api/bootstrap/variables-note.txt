@@ -1,0 +1,1 @@
+After Access is created, copy the returned Cloudflare Access organization auth domain to ACCESS_TEAM_DOMAIN and the application aud to ACCESS_AUD in the slc-ai-control Pages production environment. Do not commit either as a hostname selection mechanism; these are runtime verification configuration values.
