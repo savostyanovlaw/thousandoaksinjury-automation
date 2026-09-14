@@ -6,3 +6,17 @@ test('normalizes successful latest workflow run',async()=>{const {createGitHubAd
 test('unavailable GitHub returns stale unknown rather than red',async()=>{const {createGitHubAdapter}=await m(); const gh=createGitHubAdapter({token:'x',fetchImpl:async()=>{throw new Error('down')}}); const s=await gh.getWorkflowState(agent); assert.equal(s.stale,true); assert.equal(s.currentFailure,false);});
 test('dispatch resolves workflow from registry and blocks duplicate key',async()=>{const {createGitHubAdapter}=await m(); let calls=[]; const gh=createGitHubAdapter({token:'x',fetchImpl:async(url,opts)=>{calls.push([url,opts]); return new Response(null,{status:204});}}); await gh.dispatchRegisteredWorkflow(agent,'RUN_NOW','abc'); await assert.rejects(()=>gh.dispatchRegisteredWorkflow(agent,'RUN_NOW','abc'),/Duplicate/); assert.match(calls[0][0],/technical-seo-watchdog.yml\/dispatches/);});
 test('finds Watchdog issues by marker rather than requiring a label',async()=>{const {createGitHubAdapter}=await m(); const gh=createGitHubAdapter({token:'x',fetchImpl:fetcher([[{number:15,title:'[Technical SEO Watchdog] canonical: /',body:'<!-- technical-seo-watchdog:watchdog:canonical:/ -->',html_url:'https://github/15',state:'open',updated_at:'2026-09-13T10:00:00Z'},{number:16,title:'Other issue',body:'unrelated',html_url:'https://github/16',state:'open'}]])}); const issues=await gh.listAgentIssues(agent); assert.deepEqual(issues.map(x=>x.number),[15]);});
+
+test('read-only GitHub calls omit Authorization when token is not configured',async()=>{
+  const {createGitHubAdapter}=await m();
+  const calls=[];
+  const gh=createGitHubAdapter({fetchImpl:async(url,opts)=>{calls.push([url,opts]); return new Response(JSON.stringify({workflow_runs:[]}),{status:200,headers:{'content-type':'application/json'}});}});
+  await gh.getWorkflowState(agent);
+  assert.equal(Object.prototype.hasOwnProperty.call(calls[0][1].headers,'Authorization'),false);
+});
+
+test('write GitHub calls fail clearly when token is not configured',async()=>{
+  const {createGitHubAdapter}=await m();
+  const gh=createGitHubAdapter({fetchImpl:async()=>{throw new Error('should not fetch');}});
+  await assert.rejects(()=>gh.dispatchRegisteredWorkflow(agent,'RUN_NOW','no-token'),/GitHub write credential not configured/);
+});
