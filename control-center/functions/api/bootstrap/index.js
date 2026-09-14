@@ -1,10 +1,10 @@
 import { requireAuthorizedUser } from '../../../lib/auth.js';
-import { json } from '../../../lib/http.js';
+import { jsonResponse } from '../../../lib/http.js';
 
 export async function onRequestGet(context) {
   try {
-    requireAuthorizedUser(context);
-    return json({
+    await requireAuthorizedUser(context, context.env);
+    return jsonResponse({
       ok: true,
       capabilities: [
         'verify-cloudflare-token',
@@ -14,6 +14,6 @@ export async function onRequestGet(context) {
       ]
     });
   } catch (error) {
-    return json({ ok: false, error: error.message }, { status: 500 });
+    return jsonResponse({ ok: false, error: error.message }, Number(error?.status) || 500);
   }
 }
