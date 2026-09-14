@@ -1,11 +1,19 @@
 const REPO='savostyanovlaw/thousandoaksinjury-automation';
-function headers(token){ return {Accept:'application/vnd.github+json',Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28'}; }
+function headers(token){
+  const out={Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};
+  if(typeof token==='string' && token.trim()) out.Authorization=`Bearer ${token.trim()}`;
+  return out;
+}
 export function createGitHubAdapter({token,fetchImpl=fetch}){
   const dispatchKeys=new Set();
+  const hasWriteCredential=typeof token==='string' && Boolean(token.trim());
   async function json(url,opts={}){
     const res=await fetchImpl(url,{...opts,headers:{...headers(token),...(opts.headers||{})}});
     if(!res.ok) throw new Error(`GitHub ${res.status}`);
     return res.status===204 ? null : res.json();
+  }
+  function requireWriteCredential(){
+    if(!hasWriteCredential) throw new Error('GitHub write credential not configured');
   }
   return {
     async getWorkflowState(agent){
@@ -43,6 +51,7 @@ export function createGitHubAdapter({token,fetchImpl=fetch}){
       }catch{return [];}
     },
     async dispatchRegisteredWorkflow(agent,command,idempotencyKey){
+      requireWriteCredential();
       if(!idempotencyKey) throw new Error('Missing idempotency key');
       if(dispatchKeys.has(idempotencyKey)) throw new Error('Duplicate command');
       const workflow=agent?.workflows?.[command];
@@ -60,6 +69,7 @@ export function createGitHubAdapter({token,fetchImpl=fetch}){
       return {targetRevision:data.head.sha,url:data.html_url,state:data.state,merged:data.merged};
     },
     async mergePull(number,expectedHeadSha){
+      requireWriteCredential();
       return json(`https://api.github.com/repos/${REPO}/pulls/${Number(number)}/merge`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({sha:expectedHeadSha,merge_method:'squash'})});
     }
   };
