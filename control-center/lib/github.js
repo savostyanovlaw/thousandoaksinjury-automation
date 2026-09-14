@@ -16,6 +16,7 @@ export function createGitHubAdapter({token,fetchImpl=fetch}){
     if(!hasWriteCredential) throw new Error('GitHub write credential not configured');
   }
   return {
+    writeActionsAvailable:hasWriteCredential,
     async getWorkflowState(agent){
       if(!agent?.deployed || !agent?.workflows?.RUN_NOW) return {stale:false,lastSuccess:false,currentFailure:false,running:false,lastRun:null,recentRuns:[]};
       try{
