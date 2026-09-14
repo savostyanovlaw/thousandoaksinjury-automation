@@ -1,19 +1,14 @@
 import { requireAuthorizedUser } from '../../../lib/auth.js';
-import { jsonResponse, requireSameOrigin } from '../../../lib/http.js';
+import { jsonResponse } from '../../../lib/http.js';
 
 const ACCOUNT_ID = '8c69b02e709c79d82d43029a2c5a4c54';
 const PROJECT = 'slc-ai-control';
 const API = 'https://api.cloudflare.com/client/v4';
 
-async function cf(env, path, init = {}) {
+async function cf(env, path) {
   if (!env.CLOUDFLARE_API_TOKEN) throw new Error('CLOUDFLARE_API_TOKEN is not configured');
   const response = await fetch(`${API}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}`,
-      'Content-Type': 'application/json',
-      ...(init.headers || {})
-    }
+    headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}` }
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok || body.success === false) {
@@ -38,26 +33,6 @@ export async function onRequestGet(context) {
       },
       tokenConfigured: true
     });
-  } catch (error) {
-    return jsonResponse({ ok: false, error: error.message }, Number(error?.status) || 500);
-  }
-}
-
-export async function onRequestPost(context) {
-  try {
-    requireSameOrigin(context.request);
-    const identity = await requireAuthorizedUser(context, context.env);
-    const payload = await context.request.json().catch(() => ({}));
-    if (payload.action !== 'enable-preview-access') {
-      return jsonResponse({ ok: false, error: 'Unsupported bootstrap action' }, 400);
-    }
-
-    const project = await cf(context.env, `/accounts/${ACCOUNT_ID}/pages/projects/${PROJECT}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ deployment_configs: { preview: { env_vars: {} } } })
-    });
-
-    return jsonResponse({ ok: true, actor: identity.email, project: project.name });
   } catch (error) {
     return jsonResponse({ ok: false, error: error.message }, Number(error?.status) || 500);
   }
