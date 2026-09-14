@@ -17,12 +17,25 @@ test('GitHub diagnostics endpoint fails closed without a native session',async()
   assert.equal(res.status,401);
 });
 
-test('GitHub diagnostics response contains only safe status fields',async()=>{
+test('GitHub diagnostics response exposes safe GitHub error messages but never credential material',async()=>{
   const {safeDiagnostic}=await endpoint();
-  assert.deepEqual(safeDiagnostic({configured:true,authStatus:200,repoStatus:200,workflowStatus:403,token:'never'}),{
+  assert.deepEqual(safeDiagnostic({
     configured:true,
-    authStatus:200,
-    repoStatus:200,
-    workflowStatus:403
+    authStatus:403,
+    repoStatus:403,
+    workflowStatus:403,
+    authMessage:'Bad credentials',
+    repoMessage:'Resource not accessible by personal access token',
+    workflowMessage:'Resource not accessible by personal access token',
+    token:'never',
+    authorization:'Bearer never'
+  }),{
+    configured:true,
+    authStatus:403,
+    repoStatus:403,
+    workflowStatus:403,
+    authMessage:'Bad credentials',
+    repoMessage:'Resource not accessible by personal access token',
+    workflowMessage:'Resource not accessible by personal access token'
   });
 });
