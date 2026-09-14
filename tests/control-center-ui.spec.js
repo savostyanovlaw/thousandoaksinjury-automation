@@ -2,6 +2,7 @@ const { test, expect } = require('@playwright/test');
 
 const state = {
   generatedAt: '2026-09-13T20:00:00Z', stale: false, writeActionsAvailable: true,
+  githubDiagnostics: {configured:true,authStatus:200,repoStatus:200,workflowStatus:403},
   summary: { healthy: 1, running: 0, needsAttention: 0, waitingApproval: 0, notDeployed: 9, disabled: 0 },
   approvals: [], attention: [],
   activity: [{agentId:'technical-seo-watchdog',title:'Technical SEO Watchdog last run',timestamp:'2026-09-13T20:00:00Z',status:'success'}],
@@ -25,6 +26,11 @@ test('desktop cockpit renders ten agents and safe command', async ({ page }) => 
   await expect(page.getByRole('button',{name:'RUN NOW'})).toBeEnabled();
   await expect(page.getByText('NOT DEPLOYED',{exact:true})).toHaveCount(9);
   await expect(page.locator('body')).not.toContainText(/GITHUB_TOKEN|ACCESS_AUD|PRIVATE KEY/);
+});
+
+test('cockpit shows safe GitHub diagnostics inline', async ({ page }) => {
+  await mockApi(page); await page.goto('http://127.0.0.1:4173/');
+  await expect(page.getByText('GitHub auth 200 · repo 200 · workflow 403')).toBeVisible();
 });
 
 test('mobile cockpit remains usable', async ({ page }) => {
