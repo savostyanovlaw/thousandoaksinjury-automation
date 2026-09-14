@@ -1,5 +1,5 @@
-import { requireAuthorizedUser, requireSameOrigin } from '../../../lib/auth.js';
-import { json } from '../../../lib/http.js';
+import { requireAuthorizedUser } from '../../../lib/auth.js';
+import { jsonResponse, requireSameOrigin } from '../../../lib/http.js';
 
 const ACCOUNT_ID = '8c69b02e709c79d82d43029a2c5a4c54';
 const HOSTNAME = 'slc-ai-control.pages.dev';
@@ -20,10 +20,10 @@ async function cf(env, path, init = {}) {
 export async function onRequestPost(context) {
   try {
     requireSameOrigin(context.request);
-    const identity = requireAuthorizedUser(context);
-    if (identity.email.toLowerCase() !== AUTHORIZED_EMAIL) return json({ ok: false, error: 'Forbidden' }, { status: 403 });
+    const identity = await requireAuthorizedUser(context, context.env);
+    if (identity.email.toLowerCase() !== AUTHORIZED_EMAIL) return jsonResponse({ ok: false, error: 'Forbidden' }, 403);
     const input = await context.request.json().catch(() => ({}));
-    if (input.action !== 'ensure-control-center-access') return json({ ok: false, error: 'Unsupported action' }, { status: 400 });
+    if (input.action !== 'ensure-control-center-access') return jsonResponse({ ok: false, error: 'Unsupported action' }, 400);
 
     const apps = await cf(context.env, `/accounts/${ACCOUNT_ID}/access/apps`);
     let app = (apps || []).find((item) => item.domain === HOSTNAME);
@@ -44,8 +44,8 @@ export async function onRequestPost(context) {
       policy = await cf(context.env, `/accounts/${ACCOUNT_ID}/access/apps/${app.id}/policies/${policy.id}`, { method: 'PUT', body: JSON.stringify(policyBody) });
     }
 
-    return json({ ok: true, app: { id: app.id, domain: app.domain, aud: app.aud }, policy: { id: policy.id, name: policy.name }, actor: identity.email });
+    return jsonResponse({ ok: true, app: { id: app.id, domain: app.domain, aud: app.aud }, policy: { id: policy.id, name: policy.name }, actor: identity.email });
   } catch (error) {
-    return json({ ok: false, error: error.message }, { status: 500 });
+    return jsonResponse({ ok: false, error: error.message }, Number(error?.status) || 500);
   }
 }
