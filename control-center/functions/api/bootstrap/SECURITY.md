@@ -1,0 +1,1 @@
+The bootstrap API is intentionally not a Cloudflare API proxy. The account ID, Pages project, hostname, and authorized email are constants. State-changing calls require the existing Control Center authenticated identity and same-origin enforcement. The Cloudflare token is read only from server-side environment bindings and is never serialized to clients.
