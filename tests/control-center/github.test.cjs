@@ -20,3 +20,17 @@ test('write GitHub calls fail clearly when token is not configured',async()=>{
   const gh=createGitHubAdapter({fetchImpl:async()=>{throw new Error('should not fetch');}});
   await assert.rejects(()=>gh.dispatchRegisteredWorkflow(agent,'RUN_NOW','no-token'),/GitHub write credential not configured/);
 });
+
+test('credential diagnostics expose only safe status fields',async()=>{
+  const {createGitHubAdapter}=await m();
+  const responses=[
+    new Response(JSON.stringify({login:'savostyanovlaw'}),{status:200,headers:{'content-type':'application/json'}}),
+    new Response(JSON.stringify({full_name:'savostyanovlaw/thousandoaksinjury-automation'}),{status:200,headers:{'content-type':'application/json'}}),
+    new Response(JSON.stringify({id:357353459,state:'active'}),{status:200,headers:{'content-type':'application/json'}})
+  ];
+  let i=0;
+  const gh=createGitHubAdapter({token:'super-secret',fetchImpl:async()=>responses[i++]});
+  const result=await gh.diagnoseCredential('technical-seo-watchdog.yml');
+  assert.deepEqual(result,{configured:true,authStatus:200,repoStatus:200,workflowStatus:200});
+  assert.equal(JSON.stringify(result).includes('super-secret'),false);
+});
