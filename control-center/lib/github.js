@@ -12,11 +12,24 @@ export function createGitHubAdapter({token,fetchImpl=fetch}){
     if(!res.ok) throw new Error(`GitHub ${res.status}`);
     return res.status===204 ? null : res.json();
   }
+  async function status(url){
+    try{
+      const res=await fetchImpl(url,{headers:headers(token)});
+      return res.status;
+    }catch{return 0;}
+  }
   function requireWriteCredential(){
     if(!hasWriteCredential) throw new Error('GitHub write credential not configured');
   }
   return {
     writeActionsAvailable:hasWriteCredential,
+    async diagnoseCredential(workflow='technical-seo-watchdog.yml'){
+      if(!hasWriteCredential) return {configured:false,authStatus:0,repoStatus:0,workflowStatus:0};
+      const authStatus=await status('https://api.github.com/user');
+      const repoStatus=await status(`https://api.github.com/repos/${REPO}`);
+      const workflowStatus=await status(`https://api.github.com/repos/${REPO}/actions/workflows/${encodeURIComponent(workflow)}`);
+      return {configured:true,authStatus,repoStatus,workflowStatus};
+    },
     async getWorkflowState(agent){
       if(!agent?.deployed || !agent?.workflows?.RUN_NOW) return {stale:false,lastSuccess:false,currentFailure:false,running:false,lastRun:null,recentRuns:[]};
       try{
