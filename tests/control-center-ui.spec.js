@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 
 const state = {
-  generatedAt: '2026-09-13T20:00:00Z', stale: false,
+  generatedAt: '2026-09-13T20:00:00Z', stale: false, writeActionsAvailable: true,
   summary: { healthy: 1, running: 0, needsAttention: 0, waitingApproval: 0, notDeployed: 9, disabled: 0 },
   approvals: [], attention: [],
   activity: [{agentId:'technical-seo-watchdog',title:'Technical SEO Watchdog last run',timestamp:'2026-09-13T20:00:00Z',status:'success'}],
@@ -11,9 +11,9 @@ const state = {
   ]
 };
 
-async function mockApi(page){
-  await page.route('**/api/control/state', r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(state)}));
-  await page.route('**/api/control/agents/**', r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({agent:state.agents[0],activity:state.activity,attention:[],approvals:[]})}));
+async function mockApi(page,overrideState=state){
+  await page.route('**/api/control/state', r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(overrideState)}));
+  await page.route('**/api/control/agents/**', r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({agent:overrideState.agents[0],activity:overrideState.activity,attention:[],approvals:[]})}));
   await page.route('**/api/control/commands', r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,result:{ok:true}})}));
 }
 
@@ -22,6 +22,7 @@ test('desktop cockpit renders ten agents and safe command', async ({ page }) => 
   await expect(page.getByRole('heading',{name:'AI Control Center'})).toBeVisible();
   await expect(page.locator('.agent-card')).toHaveCount(10);
   await expect(page.getByRole('button',{name:'RUN NOW'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'RUN NOW'})).toBeEnabled();
   await expect(page.getByText('NOT DEPLOYED',{exact:true})).toHaveCount(9);
   await expect(page.locator('body')).not.toContainText(/GITHUB_TOKEN|ACCESS_AUD|PRIVATE KEY/);
 });
@@ -37,4 +38,12 @@ test('safe command can be dispatched from Watchdog card', async ({ page }) => {
   await page.route('**/api/control/commands', async r=>{body=JSON.parse(r.request().postData()); await r.fulfill({status:200,contentType:'application/json',body:'{"ok":true}'});});
   await page.goto('http://127.0.0.1:4173/'); await page.getByRole('button',{name:'RUN NOW'}).click();
   await expect.poll(()=>body?.agentId).toBe('technical-seo-watchdog'); expect(body.command).toBe('RUN_NOW'); expect(body.workflow).toBeUndefined();
+});
+
+test('safe command is disabled when GitHub write actions are unavailable', async ({ page }) => {
+  const noWrite={...state,writeActionsAvailable:false};
+  await mockApi(page,noWrite); await page.goto('http://127.0.0.1:4173/');
+  const button=page.getByRole('button',{name:'RUN NOW'});
+  await expect(button).toBeDisabled();
+  await expect(button).toHaveAttribute('title','GitHub write actions are not configured');
 });

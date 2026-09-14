@@ -49,7 +49,7 @@ export async function buildDashboardState({agents,github,pendingApprovals=[],aud
   const attention=normalized.filter(a=>a.status==='NEEDS ATTENTION').map(a=>({agentId:a.id,title:`${a.name} needs attention`,issues:a.issues}));
   const auditActivity=auditEvents.map(e=>({agentId:e.agentId,title:`${e.agentId}: ${e.action}`,timestamp:e.timestamp,status:e.result,targetId:e.targetId||null}));
   const activity=[...auditActivity,...workflowActivity].filter(a=>a.timestamp).sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp)).slice(0,50);
-  const out={generatedAt:new Date().toISOString(),summary,agents:normalized,approvals:pendingApprovals,attention,activity,stale:normalized.some(a=>a.stale)};
+  const out={generatedAt:new Date().toISOString(),summary,agents:normalized,approvals:pendingApprovals,attention,activity,stale:normalized.some(a=>a.stale),writeActionsAvailable:github?.writeActionsAvailable===true};
   assertNoSecretKeys(out);
   return out;
 }
