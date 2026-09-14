@@ -2,7 +2,7 @@ import { loadRegistry } from '../../../lib/registry.js';
 import { requireAuthorizedUser } from '../../../lib/auth.js';
 import { createGitHubAdapter } from '../../../lib/github.js';
 import { assertExactFields, errorResponse, jsonResponse, parseJson, requireSameOrigin } from '../../../lib/http.js';
-import { claimCommandIdempotency } from '../../../lib/approval-store.js';
+import { claimCommandIdempotency, ensureControlSchema } from '../../../lib/approval-store.js';
 import { writeAudit } from '../../../lib/audit.js';
 
 export async function executeCommand({agents,github,body}){
@@ -27,6 +27,7 @@ export async function onRequestPost(context){
     const capability=agent.commands.find(c=>c.name===body.command);
     if(!capability) throw new Error('Unsupported command');
     if(capability.autonomy==='RED') throw new Error('RED command requires approval');
+    await ensureControlSchema(context.env.CONTROL_DB);
     const claimed=await claimCommandIdempotency(context.env.CONTROL_DB,body.idempotencyKey,body.agentId,body.command);
     if(!claimed){ const e=new Error('Duplicate command'); e.status=409; throw e; }
     const github=createGitHubAdapter({token:context.env.GITHUB_TOKEN});
