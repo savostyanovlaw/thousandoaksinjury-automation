@@ -1,3 +1,44 @@
+const CONTROL_SCHEMA=[
+  `CREATE TABLE IF NOT EXISTS approvals (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    target_revision TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('PENDING','APPROVED','REJECTED')),
+    created_at TEXT NOT NULL,
+    decided_at TEXT,
+    decided_by TEXT,
+    consumed_at TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS audit_events (
+    id TEXT PRIMARY KEY,
+    timestamp TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    target_type TEXT,
+    target_id TEXT,
+    target_revision TEXT,
+    autonomy TEXT NOT NULL,
+    result TEXT NOT NULL,
+    metadata_json TEXT NOT NULL DEFAULT '{}'
+  )`,
+  `CREATE TABLE IF NOT EXISTS command_idempotency (
+    idempotency_key TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    command TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`
+];
+
+export async function ensureControlSchema(db){
+  if(!db?.prepare) throw new Error('Control database unavailable');
+  for(const statement of CONTROL_SCHEMA) await db.prepare(statement).run();
+}
+
 export async function listPendingApprovals(db){
   if(!db?.prepare) return [];
   const {results=[]}=await db.prepare("SELECT id, agent_id as agentId, action, target_type as targetType, target_id as targetId, target_revision as targetRevision, payload_hash as payloadHash, status, created_at as createdAt FROM approvals WHERE status = 'PENDING' ORDER BY created_at DESC").all();
