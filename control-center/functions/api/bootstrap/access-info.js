@@ -1,5 +1,5 @@
 import { requireAuthorizedUser } from '../../../lib/auth.js';
-import { json } from '../../../lib/http.js';
+import { jsonResponse } from '../../../lib/http.js';
 
 const ACCOUNT_ID = '8c69b02e709c79d82d43029a2c5a4c54';
 const API = 'https://api.cloudflare.com/client/v4';
@@ -14,7 +14,7 @@ async function request(env, path) {
 
 export async function onRequestGet(context) {
   try {
-    requireAuthorizedUser(context);
+    await requireAuthorizedUser(context, context.env);
     const [organization, applications] = await Promise.all([
       request(context.env, `/accounts/${ACCOUNT_ID}/access/organizations`),
       request(context.env, `/accounts/${ACCOUNT_ID}/access/apps`)
@@ -23,12 +23,12 @@ export async function onRequestGet(context) {
       const domain = String(app.domain || '');
       return domain === 'slc-ai-control.pages.dev' || domain.endsWith('.slc-ai-control.pages.dev');
     }).map((app) => ({ id: app.id, name: app.name, domain: app.domain, aud: app.aud, type: app.type }));
-    return json({
+    return jsonResponse({
       ok: true,
       organization: organization ? { name: organization.name, authDomain: organization.auth_domain } : null,
       applications: relevant
     });
   } catch (error) {
-    return json({ ok: false, error: error.message }, { status: 500 });
+    return jsonResponse({ ok: false, error: error.message }, Number(error?.status) || 500);
   }
 }
