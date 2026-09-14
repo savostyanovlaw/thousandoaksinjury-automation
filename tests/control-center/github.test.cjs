@@ -34,3 +34,25 @@ test('credential diagnostics expose only safe status fields',async()=>{
   assert.deepEqual(result,{configured:true,authStatus:200,repoStatus:200,workflowStatus:200});
   assert.equal(JSON.stringify(result).includes('super-secret'),false);
 });
+
+test('credential diagnostics include sanitized GitHub error messages',async()=>{
+  const {createGitHubAdapter}=await m();
+  const responses=[
+    new Response(JSON.stringify({message:'Resource not accessible by personal access token'}),{status:403,headers:{'content-type':'application/json'}}),
+    new Response(JSON.stringify({message:'Repository access denied'}),{status:403,headers:{'content-type':'application/json'}}),
+    new Response(JSON.stringify({message:'Actions permission denied'}),{status:403,headers:{'content-type':'application/json'}})
+  ];
+  let i=0;
+  const gh=createGitHubAdapter({token:'super-secret',fetchImpl:async()=>responses[i++]});
+  const result=await gh.diagnoseCredential('technical-seo-watchdog.yml');
+  assert.deepEqual(result,{
+    configured:true,
+    authStatus:403,
+    authMessage:'Resource not accessible by personal access token',
+    repoStatus:403,
+    repoMessage:'Repository access denied',
+    workflowStatus:403,
+    workflowMessage:'Actions permission denied'
+  });
+  assert.equal(JSON.stringify(result).includes('super-secret'),false);
+});
