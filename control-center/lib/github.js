@@ -12,11 +12,18 @@ export function createGitHubAdapter({token,fetchImpl=fetch}){
     if(!res.ok) throw new Error(`GitHub ${res.status}`);
     return res.status===204 ? null : res.json();
   }
-  async function status(url){
+  async function probe(url){
     try{
       const res=await fetchImpl(url,{headers:headers(token)});
-      return res.status;
-    }catch{return 0;}
+      let message='';
+      if(!res.ok){
+        try{
+          const body=await res.clone().json();
+          if(typeof body?.message==='string') message=body.message.slice(0,160);
+        }catch{}
+      }
+      return {status:res.status,message};
+    }catch{return {status:0,message:'Network error'};}
   }
   function requireWriteCredential(){
     if(!hasWriteCredential) throw new Error('GitHub write credential not configured');
@@ -25,10 +32,14 @@ export function createGitHubAdapter({token,fetchImpl=fetch}){
     writeActionsAvailable:hasWriteCredential,
     async diagnoseCredential(workflow='technical-seo-watchdog.yml'){
       if(!hasWriteCredential) return {configured:false,authStatus:0,repoStatus:0,workflowStatus:0};
-      const authStatus=await status('https://api.github.com/user');
-      const repoStatus=await status(`https://api.github.com/repos/${REPO}`);
-      const workflowStatus=await status(`https://api.github.com/repos/${REPO}/actions/workflows/${encodeURIComponent(workflow)}`);
-      return {configured:true,authStatus,repoStatus,workflowStatus};
+      const auth=await probe('https://api.github.com/user');
+      const repo=await probe(`https://api.github.com/repos/${REPO}`);
+      const workflowProbe=await probe(`https://api.github.com/repos/${REPO}/actions/workflows/${encodeURIComponent(workflow)}`);
+      const result={configured:true,authStatus:auth.status,repoStatus:repo.status,workflowStatus:workflowProbe.status};
+      if(auth.message) result.authMessage=auth.message;
+      if(repo.message) result.repoMessage=repo.message;
+      if(workflowProbe.message) result.workflowMessage=workflowProbe.message;
+      return result;
     },
     async getWorkflowState(agent){
       if(!agent?.deployed || !agent?.workflows?.RUN_NOW) return {stale:false,lastSuccess:false,currentFailure:false,running:false,lastRun:null,recentRuns:[]};
