@@ -18,16 +18,34 @@ export async function loadOptionalControlState({loadApprovals,loadAudit}){
   return {pendingApprovals,auditEvents,degraded:degradedSources.length>0,degradedSources};
 }
 
+export async function loadGitHubDiagnostics(github){
+  try{
+    const result=await github.diagnoseCredential('technical-seo-watchdog.yml');
+    return {
+      configured:result?.configured===true,
+      authStatus:Number(result?.authStatus||0),
+      repoStatus:Number(result?.repoStatus||0),
+      workflowStatus:Number(result?.workflowStatus||0)
+    };
+  }catch{
+    return {configured:false,authStatus:0,repoStatus:0,workflowStatus:0};
+  }
+}
+
 export async function onRequestGet(context){
   try{
     await requireAuthorizedUser(context,context.env);
     const agents=await loadRegistry();
     const github=createGitHubAdapter({token:context.env.GITHUB_TOKEN});
-    const optional=await loadOptionalControlState({
-      loadApprovals:()=>listPendingApprovals(context.env.CONTROL_DB),
-      loadAudit:()=>listAuditEvents(context.env.CONTROL_DB)
-    });
+    const [optional,githubDiagnostics]=await Promise.all([
+      loadOptionalControlState({
+        loadApprovals:()=>listPendingApprovals(context.env.CONTROL_DB),
+        loadAudit:()=>listAuditEvents(context.env.CONTROL_DB)
+      }),
+      loadGitHubDiagnostics(github)
+    ]);
     const state=await buildDashboardState({agents,github,pendingApprovals:optional.pendingApprovals,auditEvents:optional.auditEvents});
+    state.githubDiagnostics=githubDiagnostics;
     if(optional.degraded){
       state.stale=true;
       state.degradedSources=optional.degradedSources;
