@@ -18,15 +18,26 @@ export async function loadOptionalControlState({loadApprovals,loadAudit}){
   return {pendingApprovals,auditEvents,degraded:degradedSources.length>0,degradedSources};
 }
 
+function safeMessage(value){
+  return typeof value==='string' ? value.trim().slice(0,160) : '';
+}
+
 export async function loadGitHubDiagnostics(github){
   try{
     const result=await github.diagnoseCredential('technical-seo-watchdog.yml');
-    return {
+    const safe={
       configured:result?.configured===true,
       authStatus:Number(result?.authStatus||0),
       repoStatus:Number(result?.repoStatus||0),
       workflowStatus:Number(result?.workflowStatus||0)
     };
+    const authMessage=safeMessage(result?.authMessage);
+    const repoMessage=safeMessage(result?.repoMessage);
+    const workflowMessage=safeMessage(result?.workflowMessage);
+    if(authMessage) safe.authMessage=authMessage;
+    if(repoMessage) safe.repoMessage=repoMessage;
+    if(workflowMessage) safe.workflowMessage=workflowMessage;
+    return safe;
   }catch{
     return {configured:false,authStatus:0,repoStatus:0,workflowStatus:0};
   }
