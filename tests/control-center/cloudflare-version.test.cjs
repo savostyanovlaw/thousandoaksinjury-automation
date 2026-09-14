@@ -1,0 +1,1 @@
+const test = require('node:test'); const assert = require('node:assert/strict'); const fs = require('node:fs'); const path = require('node:path'); const s=fs.readFileSync(path.join(process.cwd(),'control-center/functions/api/bootstrap/version.js'),'utf8'); test('bootstrap version is explicit',()=>assert.match(s,/bootstrapVersion:\s*1/));
