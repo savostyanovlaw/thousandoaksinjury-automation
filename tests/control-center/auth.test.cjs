@@ -16,6 +16,12 @@ test('native credentials accept only configured email and password',async()=>{
   assert.equal(await verifyCredentials(env,'savostyanovlaw@gmail.com','wrong'),false);
 });
 
+test('native auth fails closed when configured password is too short',async()=>{
+  const {verifyCredentials}=await m();
+  const weak={...env,CONTROL_AUTH_PASSWORD:'short-password'};
+  assert.equal(await verifyCredentials(weak,'savostyanovlaw@gmail.com','short-password'),false);
+});
+
 test('signed native session validates and rejects tampering',async()=>{
   const {createSessionToken,verifySessionToken}=await m();
   const now=1_800_000_000_000;
