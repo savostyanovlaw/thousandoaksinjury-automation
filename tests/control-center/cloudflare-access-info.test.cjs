@@ -8,5 +8,6 @@ const source = fs.readFileSync(path.join(process.cwd(), 'control-center/function
 test('Access discovery filters output to Control Center hostname', () => {
   assert.match(source, /slc-ai-control\.pages\.dev/);
   assert.doesNotMatch(source, /thousandoaksinjury\.com/);
-  assert.doesNotMatch(source, /CLOUDFLARE_API_TOKEN\s*[,}]/);
+  assert.doesNotMatch(source, /jsonResponse\([\s\S]{0,1200}CLOUDFLARE_API_TOKEN/);
+  assert.doesNotMatch(source, /return\s+[^;\n]*CLOUDFLARE_API_TOKEN/);
 });
