@@ -1,0 +1,38 @@
+name: Video Engine
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: Video topic
+        required: true
+        type: string
+      location:
+        description: Target location
+        required: true
+        default: Thousand Oaks
+        type: string
+permissions:
+  contents: read
+jobs:
+  brief:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Unit tests
+        run: python -m unittest tests.test_video_engine
+      - name: Generate attorney-review video brief
+        env:
+          TOPIC: ${{ inputs.topic }}
+          LOCATION: ${{ inputs.location }}
+        run: python scripts/video_engine.py --topic "$TOPIC" --location "$LOCATION" --output artifacts/video-engine/brief.json
+      - name: Upload brief
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-engine-brief
+          path: artifacts/video-engine/brief.json
+          if-no-files-found: error
+          retention-days: 30
