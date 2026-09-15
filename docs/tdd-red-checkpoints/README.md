@@ -1,0 +1,1 @@
+These notes record test-first commits for agent branches. The actual RED evidence is the branch history: each cited commit contains a test importing an implementation module that is absent at that commit. Pull-request validation workflows provide fresh GREEN verification for the implemented branch heads.
