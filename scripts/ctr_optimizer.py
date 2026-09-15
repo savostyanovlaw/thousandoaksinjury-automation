@@ -2,15 +2,26 @@
 """Audit title/meta CTR signals and propose replacements without publishing them."""
 from __future__ import annotations
 import argparse,json,re
+from html.parser import HTMLParser
 from pathlib import Path
 
-def field(html,pattern):
- m=re.search(pattern,html,re.I|re.S);return ' '.join(re.sub(r'<[^>]+>',' ',m.group(1)).split()) if m else ''
+class HeadParser(HTMLParser):
+ def __init__(self):
+  super().__init__();self.title='';self.description='';self._title=False;self._buf=[]
+ def handle_starttag(self,tag,attrs):
+  values={str(k).lower():v for k,v in attrs}
+  if tag.lower()=='title':self._title=True;self._buf=[]
+  if tag.lower()=='meta' and str(values.get('name','')).lower()=='description':self.description=' '.join(str(values.get('content','')).split())
+ def handle_data(self,data):
+  if self._title:self._buf.append(data)
+ def handle_endtag(self,tag):
+  if tag.lower()=='title' and self._title:self.title=' '.join(''.join(self._buf).split());self._title=False
+
 def suggest_title(slug,city):
  candidate=f'{city} Personal Injury Lawyer | Savostyanov Law'
  return candidate if len(candidate)<=60 else f'{city} Injury Lawyer | Savostyanov Law'[:60].rstrip()
 def analyze_html(path,html,city='Thousand Oaks'):
- title=field(html,r'<title[^>]*>(.*?)</title>');m=re.search(r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']*)',html,re.I|re.S);desc=' '.join(m.group(1).split()) if m else '';issues=[]
+ parser=HeadParser();parser.feed(html);title=parser.title;desc=parser.description;issues=[]
  if not title:issues.append('missing_title')
  elif len(title)<30:issues.append('title_too_short')
  elif len(title)>60:issues.append('title_too_long')
