@@ -1,0 +1,1 @@
+Autonomy classification: GREEN for read-only audit and report generation. No YELLOW/RED action is implemented here.
