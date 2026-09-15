@@ -1,0 +1,1 @@
+Test-first checkpoint: commit a0b459e87fe5a406600d2b0cb4815f6730517187 contains tests/test_russian_language_robot.py while scripts/russian_language_robot.py is absent. See docs/tdd-red-checkpoints/russian-language-robot.md. PR validation supplies fresh GREEN evidence.
