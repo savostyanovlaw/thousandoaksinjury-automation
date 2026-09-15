@@ -1,0 +1,1 @@
+Review boundary: script/brief generation is YELLOW; rendering/upload/publishing is not enabled and any future publication remains RED.
