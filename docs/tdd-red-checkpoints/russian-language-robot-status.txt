@@ -1,0 +1,2 @@
+RED commit: a0b459e87fe5a406600d2b0cb4815f6730517187
+GREEN gate: Russian Language Robot Validation
