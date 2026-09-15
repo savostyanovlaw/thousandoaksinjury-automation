@@ -1,0 +1,1 @@
+Next after PR verification: fleet integration PR may mark this agent deployed and register its workflow; that shared change is intentionally not in this branch.
