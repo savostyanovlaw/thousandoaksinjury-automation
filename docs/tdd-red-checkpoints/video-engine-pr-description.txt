@@ -1,0 +1,1 @@
+PR description: attorney-review video brief generator, unit coverage, manual workflow, JSON artifact; no rendering/upload/publishing.
