@@ -1,0 +1,1 @@
+Agent branches use test-first commits. The referenced commit in each branch-specific `docs/tdd-red-checkpoints/*.md` has the test present before its implementation module. Pull-request validation workflows then run the tests on the implemented branch head.
