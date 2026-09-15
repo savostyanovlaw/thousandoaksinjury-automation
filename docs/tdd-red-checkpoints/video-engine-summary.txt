@@ -1,0 +1,1 @@
+Video Engine v1 creates deterministic short-form PI video briefs/scripts for attorney review and emits them as artifacts only.
