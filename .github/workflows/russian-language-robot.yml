@@ -1,0 +1,27 @@
+name: Russian Language Robot
+on:
+  schedule:
+    - cron: '10 17 * * 2'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Unit tests
+        run: python -m unittest tests.test_russian_language_robot
+      - name: Audit Russian page
+        run: python scripts/russian_language_robot.py --output artifacts/russian-language-robot/report.json
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: russian-language-robot-report
+          path: artifacts/russian-language-robot/report.json
+          if-no-files-found: error
+          retention-days: 30
