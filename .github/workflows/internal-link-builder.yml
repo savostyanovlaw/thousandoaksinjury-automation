@@ -1,0 +1,17 @@
+name: Internal Link Builder
+on:
+  schedule:
+    - cron: '0 17 * * 3'
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m unittest tests.test_internal_link_builder
+      - run: python scripts/internal_link_builder.py --output artifacts/internal-link-builder/report.json
+      - uses: actions/upload-artifact@v4
+        with: {name: internal-link-builder-report, path: artifacts/internal-link-builder/report.json, retention-days: 30}
