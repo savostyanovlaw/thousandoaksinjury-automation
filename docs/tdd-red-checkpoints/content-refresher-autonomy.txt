@@ -1,0 +1,1 @@
+Autonomy classification: GREEN for ranking/report generation. Any future content-editing branch is YELLOW; merge/publish remains RED.
