@@ -1,0 +1,1 @@
+Autonomy classification: YELLOW for generating reviewable briefs; external rendering/upload/publishing is intentionally absent and would remain RED.
