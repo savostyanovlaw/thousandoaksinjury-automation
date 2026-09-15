@@ -1,0 +1,1 @@
+TDD RED checkpoint: tests/test_russian_language_robot.py was committed at a0b459e87fe5a406600d2b0cb4815f6730517187 before scripts/russian_language_robot.py existed. The expected RED condition is ModuleNotFoundError for scripts.russian_language_robot. This marker documents the branch history checkpoint; CI verifies GREEN after implementation.
