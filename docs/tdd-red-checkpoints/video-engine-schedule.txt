@@ -1,0 +1,1 @@
+Runtime trigger: manual workflow_dispatch only, with topic and location inputs.
