@@ -1,0 +1,1 @@
+Unit contract contains 3 tests.
