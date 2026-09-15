@@ -1,0 +1,1 @@
+Review boundary: agent may rank refresh candidates autonomously; content changes remain YELLOW PR work and production publishing remains RED.
