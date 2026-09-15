@@ -1,0 +1,1 @@
+PR description: proposal-only refresh ranking, unit coverage, scheduled/manual workflow, JSON artifact; no publishing.
