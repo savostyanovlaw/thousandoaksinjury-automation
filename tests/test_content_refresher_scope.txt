@@ -1,0 +1,1 @@
+Scope: rank existing site pages for refresh based on age/content signals. Proposal-only; no production mutation or publishing.
