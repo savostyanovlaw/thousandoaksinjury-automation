@@ -1,0 +1,1 @@
+Implementation branch remains isolated from main until explicit merge approval.
