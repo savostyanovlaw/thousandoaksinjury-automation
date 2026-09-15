@@ -1,0 +1,1 @@
+Output artifact: artifacts/content-refresher/report.json
