@@ -1,0 +1,1 @@
+PR CI must report success for the branch-specific validation before this agent is eligible for fleet integration.
