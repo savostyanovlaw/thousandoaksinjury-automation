@@ -1,0 +1,19 @@
+name: Russian Language Robot Validation
+on:
+  pull_request:
+    paths:
+      - 'scripts/russian_language_robot.py'
+      - 'tests/test_russian_language_robot.py'
+      - '.github/workflows/russian-language-robot.yml'
+      - '.github/workflows/russian-language-robot-validation.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest tests.test_russian_language_robot
