@@ -1,0 +1,1 @@
+Test-first checkpoint: commit c2787a4b01dd60a81a779e0eef99c18fcf4dbef1 contains tests/test_content_refresher.py while scripts/content_refresher.py is absent. See docs/tdd-red-checkpoints/content-refresher.md. PR validation supplies fresh GREEN evidence.
