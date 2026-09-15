@@ -1,0 +1,1 @@
+Content Refresher v1 ranks existing pages by stale/thin/meta signals and emits proposal-only refresh priorities.
