@@ -1,0 +1,27 @@
+name: Content Refresher
+on:
+  schedule:
+    - cron: '25 17 * * 4'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Unit tests
+        run: python -m unittest tests.test_content_refresher
+      - name: Rank refresh candidates
+        run: python scripts/content_refresher.py --output artifacts/content-refresher/report.json
+      - name: Upload proposals
+        uses: actions/upload-artifact@v4
+        with:
+          name: content-refresher-report
+          path: artifacts/content-refresher/report.json
+          if-no-files-found: error
+          retention-days: 30
