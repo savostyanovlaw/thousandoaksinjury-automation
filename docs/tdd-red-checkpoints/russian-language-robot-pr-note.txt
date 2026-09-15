@@ -1,0 +1,1 @@
+Draft PR will be opened only after branch validation is observable; merge is not authorized by this note.
