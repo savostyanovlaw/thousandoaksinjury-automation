@@ -1,0 +1,1 @@
+Runtime schedule: Tuesdays at 17:10 UTC plus manual workflow_dispatch.
