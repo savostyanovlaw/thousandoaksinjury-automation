@@ -1,0 +1,1 @@
+TDD RED checkpoint: tests/test_content_refresher.py was committed at c2787a4b01dd60a81a779e0eef99c18fcf4dbef1 before scripts/content_refresher.py existed. The expected RED condition is ModuleNotFoundError for scripts.content_refresher. CI verifies GREEN after implementation.
