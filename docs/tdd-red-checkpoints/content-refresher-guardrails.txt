@@ -1,0 +1,1 @@
+Guardrails: proposal-only; no site writes; no production deploy; refresh recommendations require later reviewed implementation.
