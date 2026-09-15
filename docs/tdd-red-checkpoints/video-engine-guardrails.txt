@@ -1,0 +1,1 @@
+Guardrails: brief-only; no video rendering; no external upload; no publication; attorney review required.
