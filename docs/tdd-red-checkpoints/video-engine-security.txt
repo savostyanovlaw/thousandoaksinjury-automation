@@ -1,0 +1,1 @@
+Security: workflow permissions are contents: read; no repository write token or external publishing credential is requested by the agent workflow.
