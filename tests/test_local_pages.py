@@ -11,6 +11,12 @@ LOCAL_PAGES = (
     "westlake-village",
 )
 
+PRIMARY_PI_FUNNELS = (
+    "/car-accident-lawyer/",
+    "/dog-bite-lawyer/",
+    "/slip-and-fall-lawyer/",
+)
+
 PREMIUM_MARKERS = (
     'class="brand-lockup"',
     'data-nav-panel',
@@ -62,6 +68,13 @@ class LocalPageTemplateTests(unittest.TestCase):
                 self.assertIn('tel:+18182138798', lower)
                 self.assertIn('mailto:attorney@savostyanovlaw.com', lower)
                 self.assertEqual(lower.count('<h1'), 1)
+
+    def test_all_local_pages_route_to_primary_pi_funnels_and_case_review(self):
+        for slug, html in self.pages.items():
+            with self.subTest(slug=slug):
+                for href in PRIMARY_PI_FUNNELS:
+                    self.assertIn(f'href="{href}"', html)
+                self.assertIn('href="#contact"', html)
 
 
 if __name__ == "__main__":
