@@ -5,6 +5,8 @@ import argparse,json
 from html.parser import HTMLParser
 from pathlib import Path
 
+LANGUAGE_DIRECTORIES={'ru'}
+
 class HeadParser(HTMLParser):
  def __init__(self):
   super().__init__();self.title='';self.description='';self._title=False;self._buf=[]
@@ -53,7 +55,11 @@ def analyze_html(path,html,city='Thousand Oaks',performance=None):
 def scan(root,performance_by_path=None):
  root=Path(root);pages=[];performance_by_path=performance_by_path or {}
  for f in sorted(root.glob('*/index.html')):
-  slug=f.parent.name;path='/'+slug+'/';city=slug.replace('-',' ').title();pages.append(analyze_html(path,f.read_text(encoding='utf-8'),city,performance_by_path.get(path)))
+  slug=f.parent.name;path='/'+slug+'/'
+  if slug.lower() in LANGUAGE_DIRECTORIES:
+   pages.append(analyze_html(path,f.read_text(encoding='utf-8'),'California',performance_by_path.get(path)))
+   continue
+  city=slug.replace('-',' ').title();pages.append(analyze_html(path,f.read_text(encoding='utf-8'),city,performance_by_path.get(path)))
  home=root/'index.html'
  if home.exists():pages.insert(0,analyze_html('/',home.read_text(encoding='utf-8'),'Thousand Oaks',performance_by_path.get('/')))
  return {'agent':'ctr-optimizer','mode':'PROPOSAL_ONLY','publishAllowed':False,'pages':pages,'findingCount':sum(len(x['issues']) for x in pages)}
