@@ -24,14 +24,15 @@ class CaseReviewFormContractTests(unittest.TestCase):
         self.assertIn("forms.thousandoaksinjury.com", source)
 
     def test_existing_english_and_russian_forms_have_required_intake_fields(self):
-        self.assertEqual(len(self.form_pages), 9)
+        self.assertEqual(len(self.form_pages), 11)
         for html in self.form_pages:
             with self.subTest(language="page"):
                 self.assertIn('data-form-integration="pending"', html)
                 for field in ('name="name"', 'name="phone"', 'name="email"', 'name="message"'):
                     self.assertIn(field, html)
+                self.assertIn('/assets/city-pages.js', html)
 
-    def test_shared_js_enables_and_submits_both_forms(self):
+    def test_shared_js_enables_and_submits_forms(self):
         for token in (
             'form[data-form-integration="pending"]',
             "form.action = '/api/case-review'",
