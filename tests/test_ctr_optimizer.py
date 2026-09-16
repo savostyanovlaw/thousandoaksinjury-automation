@@ -1,4 +1,6 @@
+import tempfile
 import unittest
+from pathlib import Path
 from scripts import ctr_optimizer as agent
 
 class CtrOptimizerTests(unittest.TestCase):
@@ -46,5 +48,15 @@ class CtrOptimizerTests(unittest.TestCase):
         r=agent.analyze_html('/car-accidents/',html)
         self.assertNotIn('low_ctr_opportunity',r['issues'])
         self.assertEqual(r['mode'],'PROPOSAL_ONLY');self.assertFalse(r['publishAllowed'])
+
+    def test_language_directory_is_not_treated_as_city(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);ru=root/'ru';ru.mkdir()
+            (ru/'index.html').write_text('<html><head><title>Русскоязычный адвокат | Savostyanov Law</title></head></html>',encoding='utf-8')
+            report=agent.scan(root)
+        page=next(p for p in report['pages'] if p['path']=='/ru/')
+        proposals=' '.join(p['proposedValue'] for p in page['proposals'])
+        self.assertNotIn('Ru Personal Injury Lawyer',proposals)
+        self.assertNotIn('Ru personal injury attorney',proposals)
 
 if __name__=='__main__': unittest.main()
