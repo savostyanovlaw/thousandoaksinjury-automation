@@ -40,17 +40,23 @@ def analyze_html(path,html,city='Thousand Oaks',performance=None):
  elif len(desc)<90:issues.append('description_too_short')
  elif len(desc)>160:issues.append('description_too_long')
  slug=path.strip('/').split('/')[-1] or 'home'
- if any(x in issues for x in ('missing_title','title_too_short','title_too_long')):
-  proposals.append(_proposal('title',title,suggest_title(slug,city),'Title metadata needs a safer search-result candidate.'))
- if any(x in issues for x in ('missing_meta_description','description_too_short','description_too_long')):
-  proposals.append(_proposal('meta_description',desc,suggest_description(slug,city),'Meta description needs a field-specific search-result candidate.'))
+ title_issue=any(x in issues for x in ('missing_title','title_too_short','title_too_long'))
+ description_issue=any(x in issues for x in ('missing_meta_description','description_too_short','description_too_long'))
+ suggested_title=suggest_title(slug,city) if title_issue else None
+ suggested_description=suggest_description(slug,city) if description_issue else None
+ if title_issue:
+  proposals.append(_proposal('title',title,suggested_title,'Title metadata needs a safer search-result candidate.'))
+ if description_issue:
+  proposals.append(_proposal('meta_description',desc,suggested_description,'Meta description needs a field-specific search-result candidate.'))
  perf=dict(performance) if performance else None
  if perf:
   impressions=float(perf.get('impressions') or 0);ctr=float(perf.get('ctr') or 0);position=float(perf.get('position') or 0)
   if impressions>=100 and 0<position<=10 and ctr<0.02:
    issues.append('low_ctr_opportunity')
-   proposals.append(_proposal('title',title,suggest_title(slug,city),f'CTR opportunity: {ctr:.2%} CTR across {int(impressions)} impressions at average position {position:g}; review title relevance to query intent.'))
- return {'path':path,'mode':'PROPOSAL_ONLY','publishAllowed':False,'currentTitle':title,'currentDescription':desc,'issues':issues,'proposals':proposals,'performance':perf,'suggestedTitle':suggest_title(slug,city) if issues else None}
+   performance_title=suggest_title(slug,city)
+   proposals.append(_proposal('title',title,performance_title,f'CTR opportunity: {ctr:.2%} CTR across {int(impressions)} impressions at average position {position:g}; review title relevance to query intent.'))
+   if suggested_title is None:suggested_title=performance_title
+ return {'path':path,'mode':'PROPOSAL_ONLY','publishAllowed':False,'currentTitle':title,'currentDescription':desc,'issues':issues,'proposals':proposals,'performance':perf,'suggestedTitle':suggested_title,'suggestedDescription':suggested_description}
 
 def scan(root,performance_by_path=None):
  root=Path(root);pages=[];performance_by_path=performance_by_path or {}
