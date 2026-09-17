@@ -35,6 +35,14 @@ class CtrOptimizerTests(unittest.TestCase):
         self.assertTrue(description['proposedValue'])
         self.assertTrue(description['rationale'])
 
+    def test_missing_description_exposes_bounded_suggested_description(self):
+        html='<html><head><title>Thousand Oaks Car Accident Lawyer | Savostyanov Law</title></head></html>'
+        r=agent.analyze_html('/car-accidents/',html)
+        self.assertTrue(r['suggestedDescription'])
+        self.assertLessEqual(len(r['suggestedDescription']),160)
+        proposal=next(p for p in r['proposals'] if p['field']=='meta_description')
+        self.assertEqual(r['suggestedDescription'],proposal['proposedValue'])
+
     def test_poor_ctr_with_healthy_metadata_is_performance_opportunity(self):
         html='<html><head><title>California Car Accident Lawyer | Savostyanov Law</title><meta name="description" content="Talk with a California personal injury attorney about a car accident claim, insurance issues, evidence, and available next steps."></head></html>'
         performance={'clicks':8,'impressions':1000,'ctr':0.008,'position':6.2,'query':'car accident lawyer california'}
