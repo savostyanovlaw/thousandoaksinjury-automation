@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Find actionable SEO/content opportunities from the live Savostyanov Law site.
 
-Read-only by design: fetches public pages and writes a JSON report. It never
-publishes or edits production content.
+Read-only by design: fetches public pages and writes review-only proposals. It
+never publishes or edits production content.
 """
 from __future__ import annotations
-import argparse, json, re, urllib.parse, urllib.request
+import argparse, json, re, urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -30,6 +30,19 @@ def fetch(url):
     req=urllib.request.Request(url,headers={"User-Agent":UA})
     with urllib.request.urlopen(req,timeout=20) as r: return r.read().decode("utf-8","replace")
 
+RULES={
+    "missing_title": ("HIGH", "The page has no HTML title, weakening search-result relevance signals.", "Draft a unique, accurate title for attorney review; do not publish automatically."),
+    "short_title": ("MEDIUM", "The title is unusually short and may not communicate the page topic clearly.", "Draft a clearer title variant for attorney review."),
+    "h1_count": ("HIGH", "The page does not contain exactly one H1, creating an avoidable structural ambiguity.", "Review heading structure and propose one descriptive H1 without changing production."),
+    "thin_content": ("MEDIUM", "The page contains fewer than 350 detected words and may not answer enough user questions.", "Identify missing user-intent topics and draft additions for attorney review; verify all legal claims."),
+    "weak_internal_linking": ("MEDIUM", "The page has fewer than three detected internal links.", "Propose relevant internal links and anchor text for attorney review."),
+    "fetch_failed": ("HIGH", "The page could not be fetched, so content quality cannot be assessed reliably.", "Retry the fetch and verify site availability before making any content recommendation."),
+}
+
+def proposal(url, issue):
+    priority, reason, action=RULES[issue]
+    return {"url":url,"type":issue,"priority":priority,"reason":reason,"recommendedAction":action,"approvalStatus":"PENDING_ATTORNEY_REVIEW"}
+
 def analyze(base_url, paths):
     base=base_url.rstrip("/"); pages=[]
     for path in paths:
@@ -47,8 +60,10 @@ def analyze(base_url, paths):
             pages.append({"url":url,"title":p.title,"h1Count":len(p.h1),"wordCount":words,"internalLinks":internal,"opportunities":issues})
         except Exception as exc:
             pages.append({"url":url,"error":type(exc).__name__,"opportunities":["fetch_failed"]})
-    findings=[{"url":p["url"],"type":x} for p in pages for x in p.get("opportunities",[])]
-    return {"agent":"opportunity-finder","baseUrl":base,"pages":pages,"findingCount":len(findings),"findings":findings,"status":"HEALTHY" if not any(f["type"]=="fetch_failed" for f in findings) else "NEEDS ATTENTION"}
+    findings=[proposal(p["url"],x) for p in pages for x in p.get("opportunities",[])]
+    findings.sort(key=lambda f: ({"HIGH":0,"MEDIUM":1,"LOW":2}[f["priority"]],f["url"],f["type"]))
+    status="NEEDS ATTENTION" if any(f["type"]=="fetch_failed" for f in findings) else "HEALTHY"
+    return {"agent":"opportunity-finder","mode":"PROPOSAL_ONLY","publishAllowed":False,"requiresAttorneyReview":True,"baseUrl":base,"pages":pages,"findingCount":len(findings),"findings":findings,"status":status}
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument("--base-url",default="https://thousandoaksinjury.com"); ap.add_argument("--output",required=True); ap.add_argument("--paths",nargs="*",default=["/","/agoura-hills/","/westlake-village/","/oak-park/","/newbury-park/","/camarillo/","/simi-valley/","/ru/"])
