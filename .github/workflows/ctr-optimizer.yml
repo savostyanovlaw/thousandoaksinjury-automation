@@ -1,0 +1,30 @@
+name: CTR Optimizer
+
+on:
+  schedule:
+    - cron: '45 16 * * 3'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Unit tests
+        run: python -m unittest tests.test_ctr_optimizer
+      - name: Analyze title and meta opportunities
+        run: python scripts/ctr_optimizer.py --output artifacts/ctr-optimizer/report.json
+      - name: Upload proposals
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctr-optimizer-report
+          path: artifacts/ctr-optimizer/report.json
+          if-no-files-found: error
+          retention-days: 30
