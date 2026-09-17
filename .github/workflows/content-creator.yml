@@ -1,0 +1,41 @@
+name: Content Creator
+
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: Personal injury topic
+        required: true
+        type: string
+      city:
+        description: Target city
+        required: true
+        default: Thousand Oaks
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Unit tests
+        run: python -m unittest tests.test_content_creator
+      - name: Generate attorney-review draft
+        env:
+          TOPIC: ${{ inputs.topic }}
+          CITY: ${{ inputs.city }}
+        run: python scripts/content_creator.py --topic "$TOPIC" --city "$CITY" --output artifacts/content-creator/draft.json
+      - name: Upload draft
+        uses: actions/upload-artifact@v4
+        with:
+          name: content-creator-draft
+          path: artifacts/content-creator/draft.json
+          if-no-files-found: error
+          retention-days: 30
