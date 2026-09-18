@@ -20,5 +20,5 @@ test('dashboard state can load safe GitHub diagnostics inline',async()=>{
   const {loadGitHubDiagnostics}=await state();
   assert.equal(typeof loadGitHubDiagnostics,'function');
   const result=await loadGitHubDiagnostics({diagnoseCredential:async()=>({configured:true,authStatus:200,repoStatus:200,workflowStatus:403,permissionHeader:'',workflowMessage:'forbidden'})});
-  assert.deepEqual(result,{configured:true,authStatus:200,repoStatus:200,workflowStatus:403,workflowMessage:'forbidden'});
+  assert.deepEqual(result,{configured:true,authStatus:200,repoStatus:200,workflowStatus:403,permissionHeader:'',workflowMessage:'forbidden'});
 });
