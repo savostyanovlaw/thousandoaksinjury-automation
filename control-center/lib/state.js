@@ -30,18 +30,27 @@ function runActivity(agent,workflow){
 export async function buildDashboardState({agents,github,pendingApprovals=[],auditEvents=[]}){
   const approvalCounts=new Map();
   for(const a of pendingApprovals) approvalCounts.set(a.agentId,(approvalCounts.get(a.agentId)||0)+1);
-  const normalized=[]; const workflowActivity=[];
-  for(const agent of agents){
-    if(!agent.deployed){ normalized.push({...agent,status:'NOT DEPLOYED',stale:false,lastRun:null,recentRuns:[],nextExpectedAt:null,issues:[],pulls:[],pendingApprovals:0,capabilities:[]}); continue; }
-    const workflow=await github.getWorkflowState(agent);
-    const [issues,pulls]=await Promise.all([github.listAgentIssues(agent),github.listAgentPulls(agent)]);
+  const workflowActivity=[];
+  // Resolve agents concurrently so a slow/unavailable GitHub endpoint cannot make
+  // the whole dashboard exceed the Pages Function request budget.
+  const normalized=await Promise.all(agents.map(async agent=>{
+    if(!agent.deployed) return {...agent,status:'NOT DEPLOYED',stale:false,lastRun:null,recentRuns:[],nextExpectedAt:null,issues:[],pulls:[],pendingApprovals:0,capabilities:[]};
     const pending=approvalCounts.get(agent.id)||0;
+    const [workflowResult,issuesResult,pullsResult]=await Promise.allSettled([
+      github.getWorkflowState(agent),github.listAgentIssues(agent),github.listAgentPulls(agent)
+    ]);
+    const workflow=workflowResult.status==='fulfilled'
+      ? workflowResult.value
+      : {stale:true,lastSuccess:false,currentFailure:false,running:false,lastRun:null,recentRuns:[]};
+    const issues=issuesResult.status==='fulfilled' && Array.isArray(issuesResult.value)?issuesResult.value:[];
+    const pulls=pullsResult.status==='fulfilled' && Array.isArray(pullsResult.value)?pullsResult.value:[];
+    const stale=!!workflow.stale || workflowResult.status==='rejected' || issuesResult.status==='rejected' || pullsResult.status==='rejected';
     let status;
-    if(workflow.stale && !pending && !workflow.running && !workflow.currentFailure && !workflow.lastSuccess) status='HEALTHY';
+    if(stale && !pending && !workflow.running && !workflow.currentFailure && !workflow.lastSuccess) status='HEALTHY';
     else status=deriveAgentStatus({deployed:agent.deployed,disabled:agent.disabled,pendingApproval:pending>0,running:workflow.running,currentFailure:workflow.currentFailure || issues.length>0,lastSuccess:workflow.lastSuccess});
-    normalized.push({id:agent.id,name:agent.name,description:agent.description,status,stale:!!workflow.stale,lastRun:workflow.lastRun||null,recentRuns:workflow.recentRuns||[],nextExpectedAt:nextExpectedAt(agent),issues,pulls,pendingApprovals:pending,capabilities:agent.deployed?agent.commands:[],cadenceHours:agent.cadenceHours||null});
     workflowActivity.push(...runActivity(agent,workflow));
-  }
+    return {id:agent.id,name:agent.name,description:agent.description,status,stale,lastRun:workflow.lastRun||null,recentRuns:workflow.recentRuns||[],nextExpectedAt:nextExpectedAt(agent),issues,pulls,pendingApprovals:pending,capabilities:agent.deployed?agent.commands:[],cadenceHours:agent.cadenceHours||null};
+  }));
   const summary={healthy:0,running:0,needsAttention:0,waitingApproval:0,notDeployed:0,disabled:0,productionWebsite:'UNKNOWN'};
   for(const a of normalized){ if(a.status==='HEALTHY') summary.healthy++; else if(a.status==='RUNNING') summary.running++; else if(a.status==='NEEDS ATTENTION') summary.needsAttention++; else if(a.status==='WAITING APPROVAL') summary.waitingApproval++; else if(a.status==='NOT DEPLOYED') summary.notDeployed++; else if(a.status==='DISABLED') summary.disabled++; }
   const watchdog=normalized.find(a=>a.id==='technical-seo-watchdog');
