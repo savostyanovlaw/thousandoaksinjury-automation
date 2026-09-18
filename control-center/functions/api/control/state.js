@@ -2,7 +2,8 @@ import { loadRegistry } from '../../../lib/registry.js';
 import { requireAuthorizedUser } from '../../../lib/auth.js';
 import { createGitHubAdapter } from '../../../lib/github.js';
 import { buildDashboardState } from '../../../lib/state.js';
-import { listPendingApprovals } from '../../../lib/approval-store.js';
+import { listPendingApprovals, ensureRunReviewApproval } from '../../../lib/approval-store.js';
+import { targetHash } from '../../../lib/approvals.js';
 import { errorResponse, jsonResponse } from '../../../lib/http.js';
 import { listAuditEvents } from '../../../lib/audit.js';
 
@@ -60,7 +61,18 @@ export async function onRequestGet(context){
       }),
       loadGitHubDiagnostics(github)
     ]);
-    const state=await buildDashboardState({agents,github,pendingApprovals:optional.pendingApprovals,auditEvents:optional.auditEvents});
+    // Reconcile successful workflow runs into the owner review queue.
+    // This is review-only: approving a result never publishes or executes it.
+    for(const agent of agents){
+      const wf=await github.getWorkflowState(agent);
+      const run=wf?.lastRun;
+      if(wf?.lastSuccess && run?.id){
+        const payload={agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id)};
+        await ensureRunReviewApproval(context.env.CONTROL_DB,{...payload,id:crypto.randomUUID(),payloadHash:await targetHash(payload),status:'PENDING',createdAt:run.createdAt||new Date().toISOString()});
+      }
+    }
+    const reconciledApprovals=await listPendingApprovals(context.env.CONTROL_DB);
+    const state=await buildDashboardState({agents,github,pendingApprovals:reconciledApprovals,auditEvents:optional.auditEvents});
     state.githubDiagnostics=githubDiagnostics;
     if(optional.degraded){
       state.stale=true;
