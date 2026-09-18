@@ -29,7 +29,8 @@ export async function loadGitHubDiagnostics(github){
       configured:result?.configured===true,
       authStatus:Number(result?.authStatus||0),
       repoStatus:Number(result?.repoStatus||0),
-      workflowStatus:Number(result?.workflowStatus||0)
+      workflowStatus:Number(result?.workflowStatus||0),
+      permissionHeader:safeMessage(result?.permissionHeader)
     };
     const authMessage=safeMessage(result?.authMessage);
     const repoMessage=safeMessage(result?.repoMessage);
