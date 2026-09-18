@@ -3,8 +3,10 @@ on:
   pull_request:
     paths:
       - 'scripts/agent_orchestrator.py'
+      - 'scripts/agent_orchestrator_bridge.mjs'
       - 'tests/test_agent_orchestrator.py'
       - 'tests/control-center/agent-e2e.test.mjs'
+      - 'tests/control-center/live-artifact-approval.test.mjs'
       - '.github/workflows/agent-orchestrator.yml'
   workflow_dispatch:
 jobs:
@@ -19,4 +21,4 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: node --test tests/control-center/agent-e2e.test.mjs
+      - run: node --test tests/control-center/agent-e2e.test.mjs tests/control-center/live-artifact-approval.test.mjs
