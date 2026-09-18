@@ -31,7 +31,9 @@ export function createGitHubAdapter({token,fetchImpl=fetch}){
           if(typeof body?.message==='string') message=body.message.slice(0,160);
         }catch{}
       }
-      return {status:res.status,message};
+      const requestId=String(res.headers?.get?.('x-github-request-id')||'').slice(0,80);
+      const server=String(res.headers?.get?.('server')||'').slice(0,80);
+      return {status:res.status,message,requestId,server};
     }catch{return {status:0,message:'Network error'};}
   }
   function requireWriteCredential(){
@@ -50,7 +52,7 @@ export function createGitHubAdapter({token,fetchImpl=fetch}){
         permissionHeader=String(permissionRes.headers?.get?.('x-oauth-scopes')||'').slice(0,160);
       }catch{}
       const fingerprint=await credentialFingerprint(token);
-      const result={configured:true,authStatus:auth.status,repoStatus:repo.status,workflowStatus:workflowProbe.status,permissionHeader,...fingerprint};
+      const result={configured:true,authStatus:auth.status,repoStatus:repo.status,workflowStatus:workflowProbe.status,permissionHeader,...fingerprint,authRequestId:auth.requestId||'',repoRequestId:repo.requestId||'',workflowRequestId:workflowProbe.requestId||'',authServer:auth.server||'',repoServer:repo.server||'',workflowServer:workflowProbe.server||''};
       if(auth.message) result.authMessage=auth.message;
       if(repo.message) result.repoMessage=repo.message;
       if(workflowProbe.message) result.workflowMessage=workflowProbe.message;
@@ -79,7 +81,8 @@ export function createGitHubAdapter({token,fetchImpl=fetch}){
         const data=await json(`https://api.github.com/repos/${REPO}/issues?state=open&per_page=100`);
         return (Array.isArray(data)?data:[])
           .filter(x=>!x.pull_request)
-          .filter(x=>`${x.title||''}\n${x.body||''}`.toLowerCase().includes(String(marker).toLowerCase()))
+          .filter(x=>`${x.title||''}
+${x.body||''}`.toLowerCase().includes(String(marker).toLowerCase()))
           .map(x=>({number:x.number,title:x.title,url:x.html_url,state:x.state,updatedAt:x.updated_at}));
       }catch{return [];}
     },

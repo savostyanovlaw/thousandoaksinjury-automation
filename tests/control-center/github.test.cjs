@@ -57,7 +57,13 @@ test('credential diagnostics include sanitized GitHub error messages',async()=>{
     credentialPresent:true,
     credentialLength:'super-secret'.length,
     credentialType:'unknown',
-    credentialFingerprint:result.credentialFingerprint
+    credentialFingerprint:result.credentialFingerprint,
+    authRequestId:'',
+    repoRequestId:'',
+    workflowRequestId:'',
+    authServer:'',
+    repoServer:'',
+    workflowServer:''
   });
   assert.equal(JSON.stringify(result).includes('super-secret'),false);
 });
