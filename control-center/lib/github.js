@@ -31,11 +31,16 @@ export function createGitHubAdapter({token,fetchImpl=fetch}){
   return {
     writeActionsAvailable:hasWriteCredential,
     async diagnoseCredential(workflow='technical-seo-watchdog.yml'){
-      if(!hasWriteCredential) return {configured:false,authStatus:0,repoStatus:0,workflowStatus:0};
+      if(!hasWriteCredential) return {configured:false,authStatus:0,repoStatus:0,workflowStatus:0,permissionHeader:''};
       const auth=await probe('https://api.github.com/user');
       const repo=await probe(`https://api.github.com/repos/${REPO}`);
       const workflowProbe=await probe(`https://api.github.com/repos/${REPO}/actions/workflows/${encodeURIComponent(workflow)}`);
-      const result={configured:true,authStatus:auth.status,repoStatus:repo.status,workflowStatus:workflowProbe.status};
+      let permissionHeader='';
+      try{
+        const permissionRes=await fetchImpl(`https://api.github.com/repos/${REPO}`,{headers:headers(token)});
+        permissionHeader=String(permissionRes.headers?.get?.('x-oauth-scopes')||'').slice(0,160);
+      }catch{}
+      const result={configured:true,authStatus:auth.status,repoStatus:repo.status,workflowStatus:workflowProbe.status,permissionHeader};
       if(auth.message) result.authMessage=auth.message;
       if(repo.message) result.repoMessage=repo.message;
       if(workflowProbe.message) result.workflowMessage=workflowProbe.message;
