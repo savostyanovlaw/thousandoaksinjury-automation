@@ -22,6 +22,16 @@ class OrchestratorTests(unittest.TestCase):
         with self.assertRaises(ExecutionDenied):
             execute(a, approval, lambda _: True)
 
+    def test_artifact_mismatch_cannot_execute(self):
+        a = Artifact("a1", "r1", "x", {})
+        with self.assertRaises(ExecutionDenied):
+            execute(a, {"status": "APPROVED", "artifactId": "other", "targetRevision": "r1"}, lambda _: True)
+
+    def test_consumed_approval_cannot_replay(self):
+        a = Artifact("a1", "r1", "x", {})
+        with self.assertRaises(ExecutionDenied):
+            execute(a, {"status": "APPROVED", "artifactId": "a1", "targetRevision": "r1", "consumedAt": "already"}, lambda _: True)
+
     def test_stale_revision_cannot_execute(self):
         a = Artifact("a1", "r2", "x", {})
         with self.assertRaises(ExecutionDenied):
