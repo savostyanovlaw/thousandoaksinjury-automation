@@ -30,7 +30,11 @@ export async function loadGitHubDiagnostics(github){
       authStatus:Number(result?.authStatus||0),
       repoStatus:Number(result?.repoStatus||0),
       workflowStatus:Number(result?.workflowStatus||0),
-      permissionHeader:safeMessage(result?.permissionHeader)
+      permissionHeader:safeMessage(result?.permissionHeader),
+      credentialPresent:result?.credentialPresent===true,
+      credentialLength:Number(result?.credentialLength||0),
+      credentialType:safeMessage(result?.credentialType),
+      credentialFingerprint:safeMessage(result?.credentialFingerprint)
     };
     const authMessage=safeMessage(result?.authMessage);
     const repoMessage=safeMessage(result?.repoMessage);
