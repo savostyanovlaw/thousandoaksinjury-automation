@@ -33,7 +33,8 @@ export function createGitHubAdapter({token,fetchImpl=fetch}){
       }
       const requestId=String(res.headers?.get?.('x-github-request-id')||'').slice(0,80);
       const server=String(res.headers?.get?.('server')||'').slice(0,80);
-      return {status:res.status,message,requestId,server};
+      const acceptedPermissions=String(res.headers?.get?.('x-accepted-github-permissions')||'').slice(0,160);
+      return {status:res.status,message,requestId,server,acceptedPermissions};
     }catch{return {status:0,message:'Network error'};}
   }
   function requireWriteCredential(){
@@ -54,8 +55,11 @@ export function createGitHubAdapter({token,fetchImpl=fetch}){
       const fingerprint=await credentialFingerprint(token);
       const result={configured:true,authStatus:auth.status,repoStatus:repo.status,workflowStatus:workflowProbe.status,permissionHeader,...fingerprint,authRequestId:auth.requestId||'',repoRequestId:repo.requestId||'',workflowRequestId:workflowProbe.requestId||'',authServer:auth.server||'',repoServer:repo.server||'',workflowServer:workflowProbe.server||''};
       if(auth.message) result.authMessage=auth.message;
+      if(auth.acceptedPermissions) result.authAcceptedPermissions=auth.acceptedPermissions;
       if(repo.message) result.repoMessage=repo.message;
+      if(repo.acceptedPermissions) result.repoAcceptedPermissions=repo.acceptedPermissions;
       if(workflowProbe.message) result.workflowMessage=workflowProbe.message;
+      if(workflowProbe.acceptedPermissions) result.workflowAcceptedPermissions=workflowProbe.acceptedPermissions;
       return result;
     },
     async getWorkflowState(agent){
