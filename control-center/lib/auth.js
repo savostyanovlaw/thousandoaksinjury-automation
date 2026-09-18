@@ -23,8 +23,15 @@ function base64UrlDecode(value){
   return bytes;
 }
 
+function sessionSigningKey(env){
+  // Dedicated signing secret is preferred. CONTROL_AUTH_PASSWORD is an
+  // authenticated, server-side secret and provides a safe preview fallback;
+  // never couple session creation to the Cloudflare management API token.
+  return env?.CONTROL_SESSION_SECRET || env?.CONTROL_AUTH_PASSWORD;
+}
+
 async function hmac(keyMaterial,message){
-  if(typeof keyMaterial !== 'string' || !keyMaterial) throw new AuthorizationError();
+  if(typeof keyMaterial !== 'string' || keyMaterial.length < MIN_PASSWORD_LENGTH) throw new AuthorizationError();
   const key=await crypto.subtle.importKey('raw',encoder.encode(`slc-control-session:${keyMaterial}`),{name:'HMAC',hash:'SHA-256'},false,['sign','verify']);
   return new Uint8Array(await crypto.subtle.sign('HMAC',key,encoder.encode(message)));
 }
@@ -60,7 +67,7 @@ export async function createSessionToken(env,email,now=Date.now(),ttlMs=DEFAULT_
   if(!expectedEmail || normalized !== expectedEmail) throw new AuthorizationError();
   const payload={email:expectedEmail,iat:now,exp:now+ttlMs};
   const encodedPayload=base64UrlEncode(encoder.encode(JSON.stringify(payload)));
-  const signature=base64UrlEncode(await hmac(env?.CLOUDFLARE_API_TOKEN,encodedPayload));
+  const signature=base64UrlEncode(await hmac(sessionSigningKey(env),encodedPayload));
   return `${encodedPayload}.${signature}`;
 }
 
@@ -69,7 +76,7 @@ export async function verifySessionToken(env,token,now=Date.now()){
     if(typeof token !== 'string' || !token.includes('.')) throw new AuthorizationError();
     const [encodedPayload,providedSignature,...rest]=token.split('.');
     if(rest.length || !encodedPayload || !providedSignature) throw new AuthorizationError();
-    const expectedSignature=base64UrlEncode(await hmac(env?.CLOUDFLARE_API_TOKEN,encodedPayload));
+    const expectedSignature=base64UrlEncode(await hmac(sessionSigningKey(env),encodedPayload));
     if(!(await constantTimeStringEqual(providedSignature,expectedSignature))) throw new AuthorizationError();
     const payload=JSON.parse(decoder.decode(base64UrlDecode(encodedPayload)));
     const expectedEmail=configuredEmail(env);
