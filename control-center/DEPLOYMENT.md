@@ -5,8 +5,9 @@ The Control Center is a separate Cloudflare Pages project. Do not attach it to t
 ## Required bindings
 
 - `AUTHORIZED_EMAIL` = `savostyanovlaw@gmail.com` (plain configuration value)
-- `CONTROL_AUTH_PASSWORD` = strong secret used only by the native Control Center sign-in form
-- `CLOUDFLARE_API_TOKEN` = server-side secret used for the read-only Cloudflare project status adapter and as domain-separated session signing material
+- `CONTROL_AUTH_PASSWORD` = strong secret used by the native Control Center sign-in form; also serves as the session-signing fallback in isolated Preview environments
+- `CONTROL_SESSION_SECRET` = optional dedicated server-side session-signing secret (preferred for production)
+- `CLOUDFLARE_API_TOKEN` = server-side secret used only by the read-only Cloudflare project status adapter
 - `GITHUB_TOKEN` = secret with only the repository permissions required to read Actions/issues/PRs and dispatch registered workflows
 - `CONTROL_DB` = Cloudflare D1 binding initialized from `schema.sql`
 
@@ -16,7 +17,7 @@ No Cloudflare Zero Trust or Access application is required.
 
 All requests pass through `functions/_middleware.js`. Unauthenticated browser requests are redirected to `/auth/login`; unauthenticated API requests return HTTP 401. Login succeeds only when both the submitted email matches `AUTHORIZED_EMAIL` and the submitted password matches `CONTROL_AUTH_PASSWORD`.
 
-Successful login issues a signed `slc_session` cookie with `HttpOnly`, `Secure`, and `SameSite=Strict`. Sessions expire after eight hours and are signed server-side. Authentication responses and dashboard responses remain `no-store`/`noindex`.
+Successful login issues a signed `slc_session` cookie with `HttpOnly`, `Secure`, and `SameSite=Strict`. Sessions expire after eight hours and are signed server-side with `CONTROL_SESSION_SECRET` when configured, otherwise `CONTROL_AUTH_PASSWORD`. Session signing does not depend on the Cloudflare management API token. Authentication responses and dashboard responses remain `no-store`/`noindex`.
 
 Preview deployments must not create an alternate unprotected entry point. The preferred production configuration is to disable automatic preview deployments for this private app. If previews are intentionally enabled later, the native auth variables/secrets must also exist in the preview environment and unauthenticated preview URLs must be verified to redirect to native login before use.
 

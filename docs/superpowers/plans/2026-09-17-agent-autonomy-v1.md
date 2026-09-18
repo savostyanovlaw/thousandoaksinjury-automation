@@ -40,17 +40,17 @@
 
 ### Task 4: Orchestrator
 **Files:** `tests/test_agent_orchestrator.py`, `scripts/agent_orchestrator.py`, `.github/workflows/agent-orchestrator.yml`
-- [ ] RED: require agent routing, artifact identity/revision, approval gate, idempotent execution, and rejection of stale/rejected approvals.
-- [ ] GREEN: implement routing and approval-aware execution contract.
-- [ ] Add CI and verify GREEN.
+- [x] RED: require agent routing, artifact identity/revision, approval gate, idempotent execution, and rejection of stale/rejected approvals.
+- [x] GREEN: implement routing and approval-aware execution contract.
+- [x] Add CI workflow; exact-head GREEN still required before completion claim.
 
 ### Task 5: End-to-End Approval Verification
 **Files:** `tests/control-center/agent-e2e.test.mjs` plus existing Control Center approval modules as required.
-- [ ] RED: model Control Center → agent → artifact → approval → execution.
-- [ ] Verify pending artifact cannot execute.
-- [ ] Verify rejected artifact cannot execute.
-- [ ] Verify approved exact revision executes once.
-- [ ] Verify stale or replayed approval cannot execute.
+- [x] RED: model Control Center → agent → artifact → approval → execution.
+- [x] Verify pending artifact cannot execute.
+- [x] Verify rejected artifact cannot execute.
+- [x] Verify approved exact revision executes once.
+- [x] Verify stale or replayed approval cannot execute.
 - [ ] Run full relevant test suite and PR CI.
 
 ### Task 6: Final Integration Review

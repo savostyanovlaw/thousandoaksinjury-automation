@@ -30,72 +30,144 @@ export const AGENTS = [
     "id": "opportunity-finder",
     "name": "Opportunity Finder",
     "description": "Finds SEO and demand opportunities.",
-    "deployed": false,
+    "deployed": true,
     "disabled": false,
-    "commands": []
+    "commands": [
+      {
+        "name": "RUN_NOW",
+        "autonomy": "GREEN"
+      }
+    ],
+    "workflows": {
+      "RUN_NOW": "opportunity-finder.yml"
+    }
   },
   {
     "id": "local-seo-robot",
     "name": "Local SEO Robot",
     "description": "Improves local search coverage.",
-    "deployed": false,
+    "deployed": true,
     "disabled": false,
-    "commands": []
+    "commands": [
+      {
+        "name": "RUN_NOW",
+        "autonomy": "GREEN"
+      }
+    ],
+    "workflows": {
+      "RUN_NOW": "local-seo-robot.yml"
+    }
   },
   {
     "id": "content-creator",
     "name": "Content Creator",
     "description": "Prepares content changes through pull requests.",
-    "deployed": false,
+    "deployed": true,
     "disabled": false,
-    "commands": []
+    "commands": [
+      {
+        "name": "RUN_NOW",
+        "autonomy": "GREEN"
+      }
+    ],
+    "workflows": {
+      "RUN_NOW": "content-creator.yml"
+    }
   },
   {
     "id": "video-engine",
     "name": "Video Engine",
     "description": "Builds video content workflows.",
-    "deployed": false,
+    "deployed": true,
     "disabled": false,
-    "commands": []
+    "commands": [
+      {
+        "name": "RUN_NOW",
+        "autonomy": "GREEN"
+      }
+    ],
+    "workflows": {
+      "RUN_NOW": "video-engine.yml"
+    }
   },
   {
     "id": "ctr-optimizer",
     "name": "CTR Optimizer",
     "description": "Optimizes titles and snippets.",
-    "deployed": false,
+    "deployed": true,
     "disabled": false,
-    "commands": []
+    "commands": [
+      {
+        "name": "RUN_NOW",
+        "autonomy": "GREEN"
+      }
+    ],
+    "workflows": {
+      "RUN_NOW": "ctr-optimizer.yml"
+    }
   },
   {
     "id": "internal-link-builder",
     "name": "Internal Link Builder",
     "description": "Improves internal link structure.",
-    "deployed": false,
+    "deployed": true,
     "disabled": false,
-    "commands": []
+    "commands": [
+      {
+        "name": "RUN_NOW",
+        "autonomy": "GREEN"
+      }
+    ],
+    "workflows": {
+      "RUN_NOW": "internal-link-builder.yml"
+    }
   },
   {
     "id": "russian-language-robot",
     "name": "Russian-Language Robot",
     "description": "Maintains Russian-language content.",
-    "deployed": false,
+    "deployed": true,
     "disabled": false,
-    "commands": []
+    "commands": [
+      {
+        "name": "RUN_NOW",
+        "autonomy": "GREEN"
+      }
+    ],
+    "workflows": {
+      "RUN_NOW": "russian-language-robot.yml"
+    }
   },
   {
     "id": "content-refresher",
     "name": "Content Refresher",
     "description": "Refreshes stale content.",
-    "deployed": false,
+    "deployed": true,
     "disabled": false,
-    "commands": []
+    "commands": [
+      {
+        "name": "RUN_NOW",
+        "autonomy": "GREEN"
+      }
+    ],
+    "workflows": {
+      "RUN_NOW": "content-refresher.yml"
+    }
   },
   {
     "id": "competitor-monitor",
     "name": "Competitor Monitor",
     "description": "Tracks competitor changes and opportunities.",
-    "deployed": false,
+    "deployed": true,
     "disabled": false,
-    "commands": []
+    "commands": [
+      {
+        "name": "RUN_NOW",
+        "autonomy": "GREEN"
+      }
+    ],
+    "workflows": {
+      "RUN_NOW": "competitor-monitor.yml"
+    }
   }
 ];
