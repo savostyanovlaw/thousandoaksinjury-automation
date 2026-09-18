@@ -1,6 +1,6 @@
 const REPO='savostyanovlaw/thousandoaksinjury-automation';
 function headers(token){
-  const out={Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};
+  const out={Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'Savostyanov-Law-AI-Control-Center'};
   if(typeof token==='string' && token.trim()) out.Authorization=`Bearer ${token.trim()}`;
   return out;
 }
