@@ -28,3 +28,10 @@ jobs:
           path: artifacts/ctr-optimizer/report.json
           if-no-files-found: error
           retention-days: 30
+
+      - name: Expose result to owner Review Queue
+        if: always()
+        run: |
+          if [ -f artifacts/ctr-optimizer/report.json ]; then
+            python -c "import base64,pathlib; print('SLC_REVIEW_JSON_B64='+base64.b64encode(pathlib.Path('artifacts/ctr-optimizer/report.json').read_bytes()).decode())"
+          fi

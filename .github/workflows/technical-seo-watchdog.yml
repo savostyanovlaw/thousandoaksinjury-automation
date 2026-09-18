@@ -67,3 +67,10 @@ jobs:
         run: |
           echo "Technical SEO Watchdog detected a critical production failure."
           exit 1
+
+      - name: Expose result to owner Review Queue
+        if: always()
+        run: |
+          if [ -f artifacts/technical-seo-watchdog/report.json ]; then
+            python -c "import base64,pathlib; print('SLC_REVIEW_JSON_B64='+base64.b64encode(pathlib.Path('artifacts/technical-seo-watchdog/report.json').read_bytes()).decode())"
+          fi
