@@ -72,6 +72,12 @@ export const AGENTS = [
     ],
     "workflows": {
       "RUN_NOW": "content-creator.yml"
+    },
+    "workflowInputs": {
+      "RUN_NOW": {
+        "topic": "California personal injury attorney review draft",
+        "city": "Thousand Oaks"
+      }
     }
   },
   {
