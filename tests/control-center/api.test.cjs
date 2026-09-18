@@ -19,6 +19,6 @@ test('optional D1 state degrades to empty data instead of failing the dashboard'
 test('dashboard state can load safe GitHub diagnostics inline',async()=>{
   const {loadGitHubDiagnostics}=await state();
   assert.equal(typeof loadGitHubDiagnostics,'function');
-  const result=await loadGitHubDiagnostics({diagnoseCredential:async()=>({configured:true,authStatus:200,repoStatus:200,workflowStatus:403,permissionHeader:'',workflowMessage:'forbidden'})});
-  assert.deepEqual(result,{configured:true,authStatus:200,repoStatus:200,workflowStatus:403,permissionHeader:'',workflowMessage:'forbidden'});
+  const result=await loadGitHubDiagnostics({diagnoseCredential:async()=>({configured:true,authStatus:200,repoStatus:200,workflowStatus:403,permissionHeader:'',credentialPresent:false,credentialLength:0,credentialType:'',credentialFingerprint:'',workflowMessage:'forbidden'})});
+  assert.deepEqual(result,{configured:true,authStatus:200,repoStatus:200,workflowStatus:403,permissionHeader:'',credentialPresent:false,credentialLength:0,credentialType:'',credentialFingerprint:'',workflowMessage:'forbidden'});
 });

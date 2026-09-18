@@ -4,6 +4,15 @@ function headers(token){
   if(typeof token==='string' && token.trim()) out.Authorization=`Bearer ${token.trim()}`;
   return out;
 }
+async function credentialFingerprint(token){
+  if(typeof token!=='string' || !token.trim()) return {credentialPresent:false,credentialLength:0,credentialType:'none',credentialFingerprint:''};
+  const value=token.trim();
+  const bytes=new TextEncoder().encode(value);
+  const digest=await crypto.subtle.digest('SHA-256',bytes);
+  const fingerprint=Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,'0')).join('').slice(0,12);
+  const credentialType=value.startsWith('github_pat_')?'fine-grained':value.startsWith('ghp_')?'classic':'unknown';
+  return {credentialPresent:true,credentialLength:value.length,credentialType,credentialFingerprint:fingerprint};
+}
 export function createGitHubAdapter({token,fetchImpl=fetch}){
   const dispatchKeys=new Set();
   const hasWriteCredential=typeof token==='string' && Boolean(token.trim());
@@ -40,7 +49,8 @@ export function createGitHubAdapter({token,fetchImpl=fetch}){
         const permissionRes=await fetchImpl(`https://api.github.com/repos/${REPO}`,{headers:headers(token)});
         permissionHeader=String(permissionRes.headers?.get?.('x-oauth-scopes')||'').slice(0,160);
       }catch{}
-      const result={configured:true,authStatus:auth.status,repoStatus:repo.status,workflowStatus:workflowProbe.status,permissionHeader};
+      const fingerprint=await credentialFingerprint(token);
+      const result={configured:true,authStatus:auth.status,repoStatus:repo.status,workflowStatus:workflowProbe.status,permissionHeader,...fingerprint};
       if(auth.message) result.authMessage=auth.message;
       if(repo.message) result.repoMessage=repo.message;
       if(workflowProbe.message) result.workflowMessage=workflowProbe.message;

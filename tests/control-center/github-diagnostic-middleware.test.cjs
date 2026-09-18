@@ -20,7 +20,7 @@ test('temporary GitHub diagnostic route returns only safe status fields without 
     const res=await onRequest(context);
     assert.equal(res.status,200);
     const body=await res.json();
-    assert.deepEqual(body,{configured:true,authStatus:200,repoStatus:200,workflowStatus:403,permissionHeader:''});
+    assert.equal(body.configured,true); assert.equal(body.authStatus,200); assert.equal(body.repoStatus,200); assert.equal(body.workflowStatus,403); assert.equal(body.permissionHeader,''); assert.equal(body.credentialPresent,true); assert.equal(body.credentialLength,'super-secret'.length); assert.equal(body.credentialType,'unknown'); assert.match(body.credentialFingerprint,/^[0-9a-f]{12}$/);
     assert.equal(JSON.stringify(body).includes('super-secret'),false);
     assert.equal(res.headers.get('cache-control'),'no-store');
   }finally{
