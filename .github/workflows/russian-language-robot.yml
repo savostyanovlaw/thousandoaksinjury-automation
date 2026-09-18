@@ -1,22 +1,27 @@
 name: Russian Language Robot
-
 on:
   workflow_dispatch:
   pull_request:
-    paths:
-      - 'scripts/russian_language_robot.py'
-      - 'tests/test_russian_language_robot.py'
-      - '.github/workflows/russian-language-robot.yml'
-
-permissions:
-  contents: read
-
+    paths: ['scripts/russian_language_robot.py','tests/test_russian_language_robot.py','.github/workflows/russian-language-robot.yml']
+permissions: {contents: read}
 jobs:
-  test:
+  generate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+        with: {python-version: '3.12'}
       - run: python -m unittest tests.test_russian_language_robot -v
+      - name: Generate attorney-review Russian package
+        run: |
+          mkdir -p artifacts/russian-language-robot
+          python - <<'PY'
+          import json
+          from scripts.russian_language_robot import localize
+          result=localize("production-cycle","main","California Personal Injury Review Draft","Educational personal injury draft prepared for attorney review.")
+          open("artifacts/russian-language-robot/draft.json","w").write(json.dumps(result,ensure_ascii=False,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with: {name: russian-language-review-draft, path: artifacts/russian-language-robot/draft.json, retention-days: 30}
+      - name: Expose result to owner Review Queue
+        run: python -c "import base64,pathlib; print('SLC_REVIEW_JSON_B64='+base64.b64encode(pathlib.Path('artifacts/russian-language-robot/draft.json').read_bytes()).decode())"
