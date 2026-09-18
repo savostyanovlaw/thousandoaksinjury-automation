@@ -44,6 +44,13 @@ export async function listPendingApprovals(db){
   const {results=[]}=await db.prepare("SELECT id, agent_id as agentId, action, target_type as targetType, target_id as targetId, target_revision as targetRevision, payload_hash as payloadHash, status, created_at as createdAt FROM approvals WHERE status = 'PENDING' ORDER BY created_at DESC").all();
   return results;
 }
+export async function ensureRunReviewApproval(db,row){
+  if(!db?.prepare) throw new Error('Approval storage unavailable');
+  const existing=await db.prepare("SELECT id FROM approvals WHERE agent_id = ? AND action = 'REVIEW_RESULT' AND target_type = 'workflow_run' AND target_id = ? LIMIT 1").bind(row.agentId,String(row.targetId)).first();
+  if(existing) return null;
+  await insertApproval(db,{...row,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(row.targetId)});
+  return row;
+}
 export async function getApproval(db,id){
   if(!db?.prepare) return null;
   return await db.prepare("SELECT id, agent_id as agentId, action, target_type as targetType, target_id as targetId, target_revision as targetRevision, payload_hash as payloadHash, status, created_at as createdAt, decided_at as decidedAt, decided_by as decidedBy, consumed_at as consumedAt FROM approvals WHERE id = ?").bind(id).first();
