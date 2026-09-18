@@ -107,7 +107,7 @@ ${x.body||''}`.toLowerCase().includes(String(marker).toLowerCase()))
       if(capability.autonomy==='RED') throw new Error('RED command requires approval');
       dispatchKeys.add(idempotencyKey);
       try{
-        await json(`https://api.github.com/repos/${REPO}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:'main'})});
+        await json(`https://api.github.com/repos/${REPO}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:'main',...(agent?.workflowInputs?.[command]?{inputs:agent.workflowInputs[command]}:{})})});
         return {ok:true,workflow,command};
       }catch(error){ dispatchKeys.delete(idempotencyKey); throw error; }
     },
