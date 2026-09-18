@@ -111,6 +111,30 @@ ${x.body||''}`.toLowerCase().includes(String(marker).toLowerCase()))
         return {ok:true,workflow,command};
       }catch(error){ dispatchKeys.delete(idempotencyKey); throw error; }
     },
+    async getWorkflowRunReview(runId){
+      const id=Number(runId);
+      if(!Number.isFinite(id)) throw new Error('Invalid workflow run');
+      const run=await json(`https://api.github.com/repos/${REPO}/actions/runs/${id}`);
+      const artifactsData=await json(`https://api.github.com/repos/${REPO}/actions/runs/${id}/artifacts?per_page=100`);
+      const jobsData=await json(`https://api.github.com/repos/${REPO}/actions/runs/${id}/jobs?per_page=100`);
+      let reviewResult=null;
+      for(const job of (jobsData?.jobs||[])){
+        try{
+          const res=await fetchImpl(`https://api.github.com/repos/${REPO}/actions/jobs/${job.id}/logs`,{headers:headers(token),redirect:'follow'});
+          if(!res.ok) continue;
+          const log=await res.text();
+          const matches=[...log.matchAll(/SLC_REVIEW_JSON_B64=([A-Za-z0-9+/=]+)/g)];
+          if(matches.length){
+            const raw=atob(matches[matches.length-1][1]);
+            const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));
+            reviewResult=JSON.parse(new TextDecoder().decode(bytes));
+            break;
+          }
+        }catch{}
+      }
+      const artifacts=(artifactsData?.artifacts||[]).map(a=>({id:a.id,name:a.name,size:a.size_in_bytes,expired:!!a.expired,createdAt:a.created_at,url:`https://github.com/${REPO}/actions/runs/${id}/artifacts/${a.id}`}));
+      return {run:{id:run.id,name:run.name,status:run.status,conclusion:run.conclusion,createdAt:run.created_at,updatedAt:run.updated_at,url:run.html_url,headSha:run.head_sha,event:run.event},artifacts,reviewResult};
+    },
     async getPullRevision(number){
       const data=await json(`https://api.github.com/repos/${REPO}/pulls/${Number(number)}`);
       return {targetRevision:data.head.sha,url:data.html_url,state:data.state,merged:data.merged};
