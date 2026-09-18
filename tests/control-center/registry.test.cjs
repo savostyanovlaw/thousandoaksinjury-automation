@@ -5,7 +5,7 @@ const { pathToFileURL } = require('node:url');
 const ROOT=process.cwd();
 async function mod(p){ return import(pathToFileURL(path.join(ROOT,p))); }
 
-test('registry contains ten agents and only watchdog deployed', async()=>{
+test('registry contains ten deployed agents', async()=>{
   const { loadRegistry } = await mod('control-center/lib/registry.js');
   const agents = await loadRegistry(path.join(ROOT,'control-center/agent-registry.json'));
   assert.equal(agents.length,10);
