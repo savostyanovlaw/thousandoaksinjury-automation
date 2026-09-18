@@ -32,8 +32,9 @@ export function createGitHubAdapter({token,fetchImpl=fetch}){
         }catch{}
       }
       const requestId=String(res.headers?.get?.('x-github-request-id')||'').slice(0,80);
+      const server=String(res.headers?.get?.('server')||'').slice(0,80);
       const acceptedPermissions=String(res.headers?.get?.('x-accepted-github-permissions')||'').slice(0,160);
-      return {status:res.status,message,requestId,acceptedPermissions};
+      return {status:res.status,message,requestId,server,acceptedPermissions};
     }catch{return {status:0,message:'Network error'};}
   }
   function requireWriteCredential(){
@@ -52,15 +53,12 @@ export function createGitHubAdapter({token,fetchImpl=fetch}){
         permissionHeader=String(permissionRes.headers?.get?.('x-oauth-scopes')||'').slice(0,160);
       }catch{}
       const fingerprint=await credentialFingerprint(token);
-      const result={configured:true,authStatus:auth.status,repoStatus:repo.status,workflowStatus:workflowProbe.status,permissionHeader,...fingerprint};
+      const result={configured:true,authStatus:auth.status,repoStatus:repo.status,workflowStatus:workflowProbe.status,permissionHeader,...fingerprint,authRequestId:auth.requestId||'',repoRequestId:repo.requestId||'',workflowRequestId:workflowProbe.requestId||'',authServer:auth.server||'',repoServer:repo.server||'',workflowServer:workflowProbe.server||''};
       if(auth.message) result.authMessage=auth.message;
-      if(auth.requestId) result.authRequestId=auth.requestId;
       if(auth.acceptedPermissions) result.authAcceptedPermissions=auth.acceptedPermissions;
       if(repo.message) result.repoMessage=repo.message;
-      if(repo.requestId) result.repoRequestId=repo.requestId;
       if(repo.acceptedPermissions) result.repoAcceptedPermissions=repo.acceptedPermissions;
       if(workflowProbe.message) result.workflowMessage=workflowProbe.message;
-      if(workflowProbe.requestId) result.workflowRequestId=workflowProbe.requestId;
       if(workflowProbe.acceptedPermissions) result.workflowAcceptedPermissions=workflowProbe.acceptedPermissions;
       return result;
     },
@@ -87,7 +85,8 @@ export function createGitHubAdapter({token,fetchImpl=fetch}){
         const data=await json(`https://api.github.com/repos/${REPO}/issues?state=open&per_page=100`);
         return (Array.isArray(data)?data:[])
           .filter(x=>!x.pull_request)
-          .filter(x=>`${x.title||''}\n${x.body||''}`.toLowerCase().includes(String(marker).toLowerCase()))
+          .filter(x=>`${x.title||''}
+${x.body||''}`.toLowerCase().includes(String(marker).toLowerCase()))
           .map(x=>({number:x.number,title:x.title,url:x.html_url,state:x.state,updatedAt:x.updated_at}));
       }catch{return [];}
     },
