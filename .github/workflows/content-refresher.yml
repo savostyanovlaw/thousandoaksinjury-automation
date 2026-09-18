@@ -1,22 +1,27 @@
 name: Content Refresher
-
 on:
   workflow_dispatch:
   pull_request:
-    paths:
-      - 'scripts/content_refresher.py'
-      - 'tests/test_content_refresher.py'
-      - '.github/workflows/content-refresher.yml'
-
-permissions:
-  contents: read
-
+    paths: ['scripts/content_refresher.py','tests/test_content_refresher.py','.github/workflows/content-refresher.yml']
+permissions: {contents: read}
 jobs:
-  test:
+  generate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+        with: {python-version: '3.12'}
       - run: python -m unittest tests.test_content_refresher -v
+      - name: Generate attorney-review refresh package
+        run: |
+          mkdir -p artifacts/content-refresher
+          python - <<'PY'
+          import json
+          from scripts.content_refresher import refresh
+          result=refresh("production-cycle","main","California Personal Injury Review Draft","Existing educational personal injury content.",["Production-cycle content freshness review"])
+          open("artifacts/content-refresher/draft.json","w").write(json.dumps(result,ensure_ascii=False,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with: {name: content-refresher-review-draft, path: artifacts/content-refresher/draft.json, retention-days: 30}
+      - name: Expose result to owner Review Queue
+        run: python -c "import base64,pathlib; print('SLC_REVIEW_JSON_B64='+base64.b64encode(pathlib.Path('artifacts/content-refresher/draft.json').read_bytes()).decode())"
