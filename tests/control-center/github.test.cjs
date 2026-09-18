@@ -31,7 +31,7 @@ test('credential diagnostics expose only safe status fields',async()=>{
   let i=0;
   const gh=createGitHubAdapter({token:'super-secret',fetchImpl:async()=>responses[i++]});
   const result=await gh.diagnoseCredential('technical-seo-watchdog.yml');
-  assert.deepEqual(result,{configured:true,authStatus:200,repoStatus:200,workflowStatus:200,permissionHeader:''});
+  assert.equal(result.configured,true); assert.equal(result.authStatus,200); assert.equal(result.repoStatus,200); assert.equal(result.workflowStatus,200); assert.equal(result.permissionHeader,''); assert.equal(result.credentialPresent,true); assert.equal(result.credentialLength,'super-secret'.length); assert.equal(result.credentialType,'unknown'); assert.match(result.credentialFingerprint,/^[0-9a-f]{12}$/);
   assert.equal(JSON.stringify(result).includes('super-secret'),false);
 });
 
@@ -53,7 +53,11 @@ test('credential diagnostics include sanitized GitHub error messages',async()=>{
     repoMessage:'Repository access denied',
     workflowStatus:403,
     workflowMessage:'Actions permission denied',
-    permissionHeader:''
+    permissionHeader:'',
+    credentialPresent:true,
+    credentialLength:'super-secret'.length,
+    credentialType:'unknown',
+    credentialFingerprint:result.credentialFingerprint
   });
   assert.equal(JSON.stringify(result).includes('super-secret'),false);
 });
