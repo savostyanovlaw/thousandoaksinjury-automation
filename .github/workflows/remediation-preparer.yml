@@ -3,12 +3,30 @@ name: Remediation Preparer
 on:
   workflow_dispatch:
     inputs:
-      job_id: { required: true, type: string }
-      source_agent_id: { required: true, type: string }
-      source_run_id: { required: true, type: string }
-      finding_type: { required: true, type: string }
-      summary: { required: true, type: string }
-      recommended_action: { required: true, type: string }
+      job_id:
+        description: Remediation job ID
+        required: true
+        type: string
+      source_agent_id:
+        description: Source agent ID
+        required: true
+        type: string
+      source_run_id:
+        description: Source workflow run ID
+        required: true
+        type: string
+      finding_type:
+        description: Finding type
+        required: true
+        type: string
+      summary:
+        description: Finding summary
+        required: true
+        type: string
+      recommended_action:
+        description: Recommended remediation action
+        required: true
+        type: string
 permissions:
   contents: write
   pull-requests: write
