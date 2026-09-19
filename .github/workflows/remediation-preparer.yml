@@ -1,6 +1,6 @@
 name: Remediation Preparer
 
-on:
+'on':
   workflow_dispatch:
     inputs:
       job_id:
