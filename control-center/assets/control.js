@@ -14,6 +14,38 @@ function render(s){state=s; const o=overall(s); const p=$('#overall-status');p.t
 async function load(){try{render(await api('/api/control/state'))}catch(e){$('#connection-label').textContent='Control API unavailable';$('#agent-grid').innerHTML=`<div class="empty-state">${escapeHtml(e.message)}</div>`}}
 async function runCommand(agentId,command,button){if(!state?.writeActionsAvailable)return;button.disabled=true;const old=button.textContent;button.textContent='Running…';try{await api('/api/control/commands',{method:'POST',body:JSON.stringify({agentId,command,idempotencyKey:crypto.randomUUID()})});button.textContent='Dispatched';setTimeout(load,1800)}catch(e){button.textContent='Failed';alert(e.message)}finally{setTimeout(()=>{button.disabled=false;button.textContent=old},2200)}}
 async function showAgent(id){try{const d=await api(`/api/control/agents/${encodeURIComponent(id)}`);$('#dialog-title').textContent=d.agent.name;const runs=(d.agent.recentRuns||[]).slice(0,6).map(r=>`<div class="feed-item"><strong>${escapeHtml(r.conclusion||r.status||'run')}</strong><small>${fmt(r.createdAt)}</small></div>`).join('')||'<div class="empty-state">No recent runs.</div>';const issues=(d.agent.issues||[]).map(x=>`<div class="feed-item"><strong>#${Number(x.number)} ${escapeHtml(x.title)}</strong><small>Open issue</small></div>`).join('')||'<div class="empty-state">No open issues.</div>';const pulls=(d.agent.pulls||[]).map(x=>`<div class="feed-item"><strong>PR #${Number(x.number)} ${escapeHtml(x.title)}</strong><small>Open pull request</small></div>`).join('')||'<div class="empty-state">No open pull requests.</div>';$('#dialog-body').innerHTML=`<div class="detail-grid"><div class="detail-box"><span>Status</span><strong>${escapeHtml(d.agent.status)}</strong></div><div class="detail-box"><span>Last run</span><strong>${fmt(d.agent.lastRun?.createdAt)}</strong></div><div class="detail-box"><span>Next expected</span><strong>${fmt(d.agent.nextExpectedAt)}</strong></div><div class="detail-box"><span>Pending approvals</span><strong>${d.agent.pendingApprovals||0}</strong></div></div><h3>Recent runs</h3><div class="feed">${runs}</div><h3>Open issues</h3><div class="feed">${issues}</div><h3>Open pull requests</h3><div class="feed">${pulls}</div>`;$('#agent-dialog').showModal()}catch(e){alert(e.message)}}
+function humanizeResult(agentId,r){
+  const count=Number(r?.findingCount ?? r?.findings?.length ?? r?.failures?.length ?? r?.issues?.length ?? 0);
+  const healthy=r?.healthy===true || String(r?.status||'').toUpperCase()==='HEALTHY';
+  const noAction=healthy && count===0;
+  const names={
+    'technical-seo-watchdog':'Technical SEO health check',
+    'opportunity-finder':'SEO opportunity scan',
+    'local-seo-robot':'Local SEO review',
+    'content-creator':'Content draft',
+    'video-engine':'Video package',
+    'ctr-optimizer':'CTR improvement proposals',
+    'internal-link-builder':'Internal linking proposals',
+    'russian-language-robot':'Russian-language draft',
+    'content-refresher':'Content refresh proposal',
+    'competitor-monitor':'Competitor monitoring report'
+  };
+  let headline=noAction?'No action required':(r?.title||names[agentId]||'Agent result');
+  let summary='';
+  if(noAction) summary=`The agent completed its check and found no issues or opportunities meeting its current detection criteria.`;
+  else if(r?.findings?.length) summary=`${r.findings.length} finding(s) require review.`;
+  else if(r?.failures?.length) summary=`${r.failures.length} issue(s) were detected.`;
+  else if(r?.draftBody||r?.body||r?.script) summary='A reviewable draft was produced. Inspect the proposed content below before making a decision.';
+  else summary='The agent produced a result for owner review.';
+  const recommendation=noAction?'No change is proposed. Keep this result for the audit record.':(r?.recommendation||r?.reviewNotes||'Review the evidence and proposed artifact before accepting or rejecting.');
+  return {noAction,count,headline,summary,recommendation,label:noAction?'NO ACTION REQUIRED':'REVIEW RECOMMENDED'};
+}
+function renderHumanResult(agentId,r){
+  const h=humanizeResult(agentId,r);
+  const findings=Array.isArray(r?.findings)&&r.findings.length?`<div class="human-section"><h4>Findings</h4>${r.findings.slice(0,12).map((x,i)=>`<div class="human-finding"><strong>${i+1}.</strong> ${escapeHtml(typeof x==='string'?x:(x.title||x.message||x.issue||JSON.stringify(x)))}</div>`).join('')}</div>`:'';
+  const proposal=r?.draftBody||r?.body||r?.script||r?.description||'';
+  return `<div class="human-review ${h.noAction?'no-action':'review-needed'}"><div class="human-label">${escapeHtml(h.label)}</div><h3>${escapeHtml(h.headline)}</h3><p>${escapeHtml(h.summary)}</p><div class="human-stats"><span>Findings <strong>${h.count}</strong></span><span>Status <strong>${escapeHtml(r?.status|| (r?.healthy===true?'HEALTHY':'REVIEW'))}</strong></span></div>${findings}${proposal?`<div class="human-section"><h4>Proposed artifact</h4><div class="proposal-preview">${escapeHtml(proposal)}</div></div>`:''}<div class="human-section"><h4>Recommended action</h4><p>${escapeHtml(h.recommendation)}</p></div><details><summary>Technical details (JSON)</summary><pre>${escapeHtml(JSON.stringify(r,null,2))}</pre></details></div>`;
+}
 async function showApproval(id){
   const a=state?.approvals.find(x=>x.id===id);if(!a)return;
   $('#approval-dialog-body').innerHTML='<div class="empty-state">Loading the actual agent result…</div>';
@@ -23,8 +55,8 @@ async function showApproval(id){
     if(a.action==='REVIEW_RESULT') review=await api(`/api/control/approvals/${encodeURIComponent(a.id)}/review`);
     const result=review?.reviewResult;
     const artifacts=(review?.artifacts||[]).map(x=>`<a class="artifact-link" href="${escapeHtml(x.url)}" target="_blank" rel="noopener">${escapeHtml(x.name)} · ${Number(x.size||0).toLocaleString()} bytes</a>`).join('')||'<span class="muted">No artifact attached to this run.</span>';
-    const resultHtml=result?`<div class="review-result"><h3>Agent result</h3><pre>${escapeHtml(JSON.stringify(result,null,2))}</pre></div>`:`<div class="review-result missing"><h3>Result preview unavailable</h3><p>This older run did not expose a review payload. Re-run the agent before accepting it. Artifact metadata is shown below.</p></div>`;
-    $('#approval-dialog-body').innerHTML=`<p>${a.action==='REVIEW_RESULT'?'Review the actual result below. Accepting records your decision only; it does not publish or execute anything.':'This approval is valid only for the exact target below.'}</p><div class="target-code">Agent: ${escapeHtml(a.agentId)}<br>Action: ${escapeHtml(a.action)}<br>Target: ${escapeHtml(a.targetType)} ${escapeHtml(a.targetId)}<br>Revision: ${escapeHtml(a.targetRevision)}</div>${a.action==='REVIEW_RESULT'?resultHtml:''}<div class="artifact-list"><h3>Artifacts</h3>${artifacts}</div><div class="approval-actions dialog-actions">${a.action==='REVIEW_RESULT'&& !result?'':`<button class="approve-btn" data-decision="APPROVE" data-approval-id="${escapeHtml(a.id)}">${a.action==='REVIEW_RESULT'?'Accept result':'Approve exact action'}</button>`}<button class="danger-btn" data-decision="REJECT" data-approval-id="${escapeHtml(a.id)}">Reject</button></div>`;
+    const resultHtml=result?renderHumanResult(a.agentId,result):`<div class="review-result missing"><h3>Result preview unavailable</h3><p>This older run did not expose a review payload. Re-run the agent before accepting it. Artifact metadata is shown below.</p></div>`;
+    $('#approval-dialog-body').innerHTML=`<p>${a.action==='REVIEW_RESULT'?'Review the actual result below. Accepting records your decision only; it does not publish or execute anything.':'This approval is valid only for the exact target below.'}</p><div class="target-code">Agent: ${escapeHtml(a.agentId)}<br>Action: ${escapeHtml(a.action)}<br>Target: ${escapeHtml(a.targetType)} ${escapeHtml(a.targetId)}<br>Revision: ${escapeHtml(a.targetRevision)}</div>${a.action==='REVIEW_RESULT'?resultHtml:''}<div class="artifact-list"><h3>Artifacts</h3>${artifacts}</div><div class="approval-actions dialog-actions">${a.action==='REVIEW_RESULT'&& (!result || humanizeResult(a.agentId,result).noAction)?'':`<button class="approve-btn" data-decision="APPROVE" data-approval-id="${escapeHtml(a.id)}">${a.action==='REVIEW_RESULT'?'Accept result':'Approve exact action'}</button>`}${a.action==='REVIEW_RESULT'&& result&&humanizeResult(a.agentId,result).noAction?'':`<button class="danger-btn" data-decision="REJECT" data-approval-id="${escapeHtml(a.id)}">Reject</button>`}</div>`;
   }catch(e){$('#approval-dialog-body').innerHTML=`<div class="review-result missing"><h3>Could not load result</h3><p>${escapeHtml(e.message)}</p><p>Do not approve this item until the result can be inspected.</p></div>`}
 }
 async function decide(id,decision,btn){btn.disabled=true;try{await api(`/api/control/approvals/${encodeURIComponent(id)}`,{method:'POST',body:JSON.stringify({decision})});$('#approval-dialog').close();await load()}catch(e){alert(e.message)}finally{btn.disabled=false}}
