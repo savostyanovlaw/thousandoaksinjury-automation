@@ -62,6 +62,7 @@ export async function onRequestGet(context){
       loadGitHubDiagnostics(github)
     ]);
     // Reconcile successful workflow runs into the owner review queue.
+    // Presentation decides whether a result is actionable; execution remains approval-gated.
     // This is review-only: approving a result never publishes or executes it.
     for(const agent of agents){
       const wf=await github.getWorkflowState(agent);
