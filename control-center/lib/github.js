@@ -111,6 +111,13 @@ ${x.body||''}`.toLowerCase().includes(String(marker).toLowerCase()))
         return {ok:true,workflow,command};
       }catch(error){ dispatchKeys.delete(idempotencyKey); throw error; }
     },
+    async dispatchRemediation(job){
+      requireWriteCredential();
+      const workflow='remediation-preparer.yml';
+      const inputs={job_id:String(job.id),source_agent_id:String(job.sourceAgentId),source_run_id:String(job.sourceRunId),finding_type:String(job.findingType),summary:String(job.summary).slice(0,500),recommended_action:String(job.recommendedAction).slice(0,500)};
+      await json(`https://api.github.com/repos/${REPO}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs})});
+      return {ok:true,workflow};
+    },
     async getWorkflowRunReview(runId){
       const id=Number(runId);
       if(!Number.isFinite(id)) throw new Error('Invalid workflow run');

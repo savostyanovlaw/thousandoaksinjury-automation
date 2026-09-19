@@ -1,0 +1,52 @@
+name: Remediation Preparer
+on:
+  workflow_dispatch:
+    inputs:
+      job_id: { required: true, type: string }
+      source_agent_id: { required: true, type: string }
+      source_run_id: { required: true, type: string }
+      finding_type: { required: true, type: string }
+      summary: { required: true, type: string }
+      recommended_action: { required: true, type: string }
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce preparation-only policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          BRANCH="remediation/${{ inputs.job_id }}"
+          git checkout -b "$BRANCH"
+          mkdir -p remediation
+          cat > "remediation/${{ inputs.job_id }}.json" <<'JSON'
+          {
+            "jobId": "${{ inputs.job_id }}",
+            "sourceAgentId": "${{ inputs.source_agent_id }}",
+            "sourceRunId": "${{ inputs.source_run_id }}",
+            "findingType": "${{ inputs.finding_type }}",
+            "summary": ${{ toJSON(inputs.summary) }},
+            "recommendedAction": ${{ toJSON(inputs.recommended_action) }},
+            "executionPolicy": {
+              "branchOnly": true,
+              "testsRequired": true,
+              "pullRequestRequired": true,
+              "mergeAllowed": false,
+              "deployAllowed": false,
+              "publishAllowed": false,
+              "secondOwnerApprovalRequired": true
+            }
+          }
+          JSON
+          git config user.name "SLC Remediation Agent"
+          git config user.email "actions@users.noreply.github.com"
+          git add remediation/
+          git commit -m "Prepare remediation ${{ inputs.job_id }}"
+          git push origin "$BRANCH"
+          gh pr create --base main --head "$BRANCH" --title "Remediation: ${{ inputs.summary }}" --body "Prepared from approved report run ${{ inputs.source_run_id }}. This PR is preparation-only. Merge/deploy/publish requires a separate owner approval."
+        env:
+          GH_TOKEN: ${{ github.token }}
