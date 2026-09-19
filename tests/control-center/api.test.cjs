@@ -22,3 +22,6 @@ test('dashboard state can load safe GitHub diagnostics inline',async()=>{
   const result=await loadGitHubDiagnostics({diagnoseCredential:async()=>({configured:true,authStatus:200,repoStatus:200,workflowStatus:403,permissionHeader:'',credentialPresent:false,credentialLength:0,credentialType:'',credentialFingerprint:'',workflowMessage:'forbidden'})});
   assert.deepEqual(result,{configured:true,authStatus:200,repoStatus:200,workflowStatus:403,permissionHeader:'',credentialPresent:false,credentialLength:0,credentialType:'',credentialFingerprint:'',workflowMessage:'forbidden'});
 });
+
+
+test('control state exposes remediation jobs without making them executable browser actions',async()=>{ const fs=require('node:fs'); const s=fs.readFileSync('control-center/functions/api/control/state.js','utf8'); assert.match(s,/listRemediationJobs/); assert.match(s,/state\.remediationJobs=optional\.remediationJobs/); });
