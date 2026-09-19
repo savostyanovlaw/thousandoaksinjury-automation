@@ -7,6 +7,12 @@ on:
   schedule:
     - cron: '0 */12 * * *'
   workflow_dispatch:
+    inputs:
+      remediation_e2e_fixture:
+        description: 'Emit a safe synthetic robots finding for remediation E2E validation'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -39,6 +45,19 @@ jobs:
           python3 scripts/technical_seo_watchdog_runner.py \
             --base-url https://thousandoaksinjury.com \
             --output artifacts/technical-seo-watchdog/report.json
+
+      - name: Inject safe remediation E2E fixture
+        if: github.event_name == 'workflow_dispatch' && inputs.remediation_e2e_fixture == true
+        run: |
+          python3 - <<'PY'
+          import json
+          p='artifacts/technical-seo-watchdog/report.json'
+          with open(p,encoding='utf-8') as f: r=json.load(f)
+          r['healthy']=False
+          r['findings']=[{'findingType':'robots','title':'[E2E fixture] robots sitemap declaration','summary':'Safe synthetic finding for approval-to-remediation validation; production is not unhealthy.','recommendedAction':'Ensure website/robots.txt declares Sitemap: https://thousandoaksinjury.com/sitemap.xml','e2eFixture':True}]
+          r['fixture']=True
+          with open(p,'w',encoding='utf-8') as f: json.dump(r,f,indent=2); f.write('\\n')
+          PY
 
       - name: Reconcile watchdog GitHub issues
         if: always()
