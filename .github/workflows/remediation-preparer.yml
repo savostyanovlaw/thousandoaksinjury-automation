@@ -44,6 +44,7 @@ jobs:
           FINDING_TYPE: ${{ inputs.finding_type }}
           SUMMARY: ${{ inputs.summary }}
           RECOMMENDED_ACTION: ${{ inputs.recommended_action }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           BRANCH="remediation/$JOB_ID"
@@ -84,5 +85,3 @@ jobs:
           git commit -m "Prepare remediation $JOB_ID"
           git push origin "$BRANCH"
           gh pr create --base main --head "$BRANCH" --title "Remediation: $SUMMARY" --body "Prepared from approved report run $SOURCE_RUN_ID. Tests passed. No content publication is authorized by this workflow."
-        env:
-          GH_TOKEN: ${{ github.token }}
