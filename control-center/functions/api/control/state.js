@@ -6,17 +6,21 @@ import { listPendingApprovals, ensureRunReviewApproval } from '../../../lib/appr
 import { targetHash } from '../../../lib/approvals.js';
 import { errorResponse, jsonResponse } from '../../../lib/http.js';
 import { listAuditEvents } from '../../../lib/audit.js';
+import { listRemediationJobs } from '../../../lib/remediation-store.js';
 
-export async function loadOptionalControlState({loadApprovals,loadAudit}){
+export async function loadOptionalControlState({loadApprovals,loadAudit,loadRemediation=async()=>[]}){
   const degradedSources=[];
-  const [approvalsResult,auditResult]=await Promise.allSettled([loadApprovals(),loadAudit()]);
+  const [approvalsResult,auditResult,remediationResult]=await Promise.allSettled([loadApprovals(),loadAudit(),loadRemediation()]);
   let pendingApprovals=[];
   let auditEvents=[];
+  let remediationJobs=[];
   if(approvalsResult.status==='fulfilled') pendingApprovals=approvalsResult.value;
   else degradedSources.push('approvals');
   if(auditResult.status==='fulfilled') auditEvents=auditResult.value;
   else degradedSources.push('audit');
-  return {pendingApprovals,auditEvents,degraded:degradedSources.length>0,degradedSources};
+  if(remediationResult.status==='fulfilled') remediationJobs=remediationResult.value;
+  else degradedSources.push('remediation');
+  return {pendingApprovals,auditEvents,remediationJobs,degraded:degradedSources.length>0,degradedSources};
 }
 
 function safeMessage(value){
@@ -57,7 +61,8 @@ export async function onRequestGet(context){
     const [optional,githubDiagnostics]=await Promise.all([
       loadOptionalControlState({
         loadApprovals:()=>listPendingApprovals(context.env.CONTROL_DB),
-        loadAudit:()=>listAuditEvents(context.env.CONTROL_DB)
+        loadAudit:()=>listAuditEvents(context.env.CONTROL_DB),
+        loadRemediation:()=>listRemediationJobs(context.env.CONTROL_DB)
       }),
       loadGitHubDiagnostics(github)
     ]);
@@ -75,6 +80,7 @@ export async function onRequestGet(context){
     const reconciledApprovals=await listPendingApprovals(context.env.CONTROL_DB);
     const state=await buildDashboardState({agents,github,pendingApprovals:reconciledApprovals,auditEvents:optional.auditEvents});
     state.githubDiagnostics=githubDiagnostics;
+    state.remediationJobs=optional.remediationJobs;
     if(optional.degraded){
       state.stale=true;
       state.degradedSources=optional.degradedSources;
