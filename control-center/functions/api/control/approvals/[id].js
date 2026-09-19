@@ -3,6 +3,7 @@ import { createGitHubAdapter } from '../../../../lib/github.js';
 import { targetHash, assertApprovalExecutable } from '../../../../lib/approvals.js';
 import { getApproval, decideApproval, consumeApproval } from '../../../../lib/approval-store.js';
 import { writeAudit } from '../../../../lib/audit.js';
+import { createRemediationJob, updateRemediationJob } from '../../../../lib/remediation-store.js';
 import { assertExactFields, errorResponse, jsonResponse, parseJson, requireSameOrigin } from '../../../../lib/http.js';
 
 export async function executeApprovalDecision({record,decision,user,db,github}){
@@ -14,8 +15,31 @@ export async function executeApprovalDecision({record,decision,user,db,github}){
   }
   if(decision!=='APPROVE') throw new Error('Invalid decision');
   if(record.targetType==='workflow_run' && record.action==='REVIEW_RESULT'){
+    const review=await github.getWorkflowRunReview(record.targetId);
+    const r=review?.reviewResult||{};
+    const findings=Array.isArray(r.findings)?r.findings:[];
+    const actionable=findings.length?findings:[r];
+    const jobs=[];
+    const route=(type)=>({
+      title:'technical-seo-fixer',meta_description:'technical-seo-fixer',canonical:'technical-seo-fixer',
+      broken_link:'technical-seo-fixer',redirect:'technical-seo-fixer',sitemap:'technical-seo-fixer',
+      robots:'technical-seo-fixer',schema:'technical-seo-fixer',structured_data:'technical-seo-fixer'
+    }[String(type||'').toLowerCase()]|| (record.agentId==='technical-seo-watchdog'?'technical-seo-fixer':null));
+    for(const item of actionable){
+      const type=item?.findingType||item?.type||item?.code||'general';
+      const summary=String(item?.summary||item?.title||item?.message||r?.title||'Approved agent finding').slice(0,1000);
+      const recommendedAction=String(item?.recommendedAction||item?.recommendation||r?.recommendation||'Prepare a repository-level fix for owner review.').slice(0,1000);
+      const remediationAgentId=route(type);
+      const job={id:crypto.randomUUID(),sourceAgentId:record.agentId,sourceRunId:String(record.targetId),ownerApprovalId:record.id,findingType:String(type),summary,recommendedAction,rawFinding:item||{},remediationAgentId,createdAt:new Date().toISOString()};
+      try{
+        await createRemediationJob(db,job);
+        if(remediationAgentId){await github.dispatchRemediation(job);await updateRemediationJob(db,job.id,'DISPATCHED');}
+        else await updateRemediationJob(db,job.id,'BLOCKED');
+        jobs.push({...job,status:remediationAgentId?'DISPATCHED':'BLOCKED'});
+      }catch(error){ if(!/UNIQUE|constraint/i.test(String(error?.message||error))) throw error; }
+    }
     const decided=await decideApproval(db,record.id,'APPROVED',user.email);
-    return {ok:true,executed:false,reviewAccepted:true,...decided};
+    return {ok:true,executed:false,reviewAccepted:true,remediationJobs:jobs,...decided};
   }
   if(record.targetType!=='pull_request' || record.action!=='MERGE_PR') throw new Error('Unsupported RED action');
   const current=await github.getPullRevision(record.targetId);
