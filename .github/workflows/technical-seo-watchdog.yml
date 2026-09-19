@@ -56,7 +56,9 @@ jobs:
           r['healthy']=False
           r['findings']=[{'findingType':'robots','title':'[E2E fixture] robots sitemap declaration','summary':'Safe synthetic finding for approval-to-remediation validation; production is not unhealthy.','recommendedAction':'Ensure website/robots.txt declares Sitemap: https://thousandoaksinjury.com/sitemap.xml','e2eFixture':True}]
           r['fixture']=True
-          with open(p,'w',encoding='utf-8') as f:\n            json.dump(r,f,indent=2)\n            f.write('\\n')
+          with open(p,'w',encoding='utf-8') as f:
+            json.dump(r,f,indent=2)
+            f.write(chr(10))
           PY
 
       - name: Reconcile watchdog GitHub issues
