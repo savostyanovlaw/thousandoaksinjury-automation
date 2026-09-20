@@ -1,5 +1,7 @@
 name: Russian Language Robot
 on:
+  schedule:
+    - cron: '35 15 * * 1,4'
   workflow_dispatch:
   pull_request:
     paths: ['scripts/russian_language_robot.py','tests/test_russian_language_robot.py','.github/workflows/russian-language-robot.yml']
