@@ -84,4 +84,6 @@ jobs:
           git add remediation/ website/robots.txt
           git commit -m "Prepare remediation $JOB_ID"
           git push origin "$BRANCH"
-          gh pr create --base main --head "$BRANCH" --title "Remediation: $SUMMARY" --body "Prepared from approved report run $SOURCE_RUN_ID. Tests passed. No content publication is authorized by this workflow."
+          if ! gh pr create --base main --head "$BRANCH" --title "Remediation: $SUMMARY" --body "Prepared from approved report run $SOURCE_RUN_ID. Tests passed. No content publication is authorized by this workflow."; then
+            echo "::warning::Branch prepared and pushed, but repository policy blocks GitHub Actions from creating pull requests. The Control Center/GitHub integration must open the PR."
+          fi
