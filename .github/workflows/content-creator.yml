@@ -1,6 +1,8 @@
 name: Content Creator
 
 on:
+  schedule:
+    - cron: '5 16 * * 1,4'
   workflow_dispatch:
     inputs:
       topic:
@@ -29,8 +31,8 @@ jobs:
         run: python -m unittest tests.test_content_creator
       - name: Generate attorney-review draft
         env:
-          TOPIC: ${{ inputs.topic }}
-          CITY: ${{ inputs.city }}
+          TOPIC: ${{ inputs.topic || 'California personal injury attorney review draft' }}
+          CITY: ${{ inputs.city || 'Thousand Oaks' }}
         run: python scripts/content_creator.py --topic "$TOPIC" --city "$CITY" --output artifacts/content-creator/draft.json
       - name: Upload draft
         uses: actions/upload-artifact@v4
