@@ -47,20 +47,31 @@ jobs:
     if: ${{ needs.analyze.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger safe downstream draft preparation
+      - uses: actions/download-artifact@v4
+        with:
+          name: opportunity-finder-report
+          path: artifacts/opportunity-finder
+      - name: Trigger downstream draft from highest-priority real finding
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           python3 - <<'PY'
           import json, os, urllib.request
-          # Safe GREEN handoff: downstream agents prepare review-only artifacts.
-          # No merge, deploy, or publication is authorized here.
-          for workflow in ("content-creator.yml",):
-              req=urllib.request.Request(
-                  f"https://api.github.com/repos/{os.environ['REPO']}/actions/workflows/{workflow}/dispatches",
-                  data=json.dumps({"ref":"main","inputs":{"topic":"Live-site SEO opportunity review draft","city":"Thousand Oaks","source_url":"https://thousandoaksinjury.com/","opportunity_type":"opportunity-finder"}}).encode(),
-                  method="POST",
-                  headers={"Authorization":f"Bearer {os.environ['GH_TOKEN']}","Accept":"application/vnd.github+json","Content-Type":"application/json"})
-              urllib.request.urlopen(req).read()
+          report=json.load(open("artifacts/opportunity-finder/report.json"))
+          findings=report.get("findings") or []
+          if not findings:
+              print("No actionable finding; downstream draft not dispatched.")
+              raise SystemExit(0)
+          finding=findings[0]
+          url=finding["url"]
+          issue=finding["type"]
+          topic=f"{issue.replace('_',' ')} review"
+          req=urllib.request.Request(
+              f"https://api.github.com/repos/{os.environ['REPO']}/actions/workflows/content-creator.yml/dispatches",
+              data=json.dumps({"ref":"main","inputs":{"topic":topic,"city":"Thousand Oaks","source_url":url,"opportunity_type":issue}}).encode(),
+              method="POST",
+              headers={"Authorization":f"Bearer {os.environ['GH_TOKEN']}","Accept":"application/vnd.github+json","Content-Type":"application/json"})
+          urllib.request.urlopen(req).read()
+          print(json.dumps({"dispatched":"content-creator.yml","source_url":url,"opportunity_type":issue}))
           PY
