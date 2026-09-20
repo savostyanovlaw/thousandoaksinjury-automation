@@ -317,6 +317,7 @@ document.addEventListener('DOMContentLoaded', function () {
       }).then(function () {
         form.reset();
         status.textContent = messages.success;
+        if (typeof window.gtag === 'function') window.gtag('event', 'generate_lead', { event_category: 'case_review', page_location: window.location.href });
       }).catch(function (error) {
         var fields = error.payload && error.payload.code === 'VALIDATION_ERROR' && error.payload.fields;
         if (fields) {
