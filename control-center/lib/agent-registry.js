@@ -28,6 +28,7 @@ export const AGENTS = [
   },
   {
     "id": "opportunity-finder",
+    "cadenceHours": 96,
     "name": "Opportunity Finder",
     "description": "Finds SEO and demand opportunities.",
     "deployed": true,
@@ -44,6 +45,7 @@ export const AGENTS = [
   },
   {
     "id": "local-seo-robot",
+    "cadenceHours": 120,
     "name": "Local SEO Robot",
     "description": "Improves local search coverage.",
     "deployed": true,
@@ -60,6 +62,7 @@ export const AGENTS = [
   },
   {
     "id": "content-creator",
+    "cadenceHours": 96,
     "name": "Content Creator",
     "description": "Prepares content changes through pull requests.",
     "deployed": true,
@@ -82,6 +85,7 @@ export const AGENTS = [
   },
   {
     "id": "video-engine",
+    "cadenceHours": 120,
     "name": "Video Engine",
     "description": "Builds video content workflows.",
     "deployed": true,
@@ -98,6 +102,7 @@ export const AGENTS = [
   },
   {
     "id": "ctr-optimizer",
+    "cadenceHours": 216,
     "name": "CTR Optimizer",
     "description": "Optimizes titles and snippets.",
     "deployed": true,
@@ -114,6 +119,7 @@ export const AGENTS = [
   },
   {
     "id": "internal-link-builder",
+    "cadenceHours": 216,
     "name": "Internal Link Builder",
     "description": "Improves internal link structure.",
     "deployed": true,
@@ -130,6 +136,7 @@ export const AGENTS = [
   },
   {
     "id": "russian-language-robot",
+    "cadenceHours": 120,
     "name": "Russian-Language Robot",
     "description": "Maintains Russian-language content.",
     "deployed": true,
@@ -146,6 +153,7 @@ export const AGENTS = [
   },
   {
     "id": "content-refresher",
+    "cadenceHours": 36,
     "name": "Content Refresher",
     "description": "Refreshes stale content.",
     "deployed": true,
@@ -162,6 +170,7 @@ export const AGENTS = [
   },
   {
     "id": "competitor-monitor",
+    "cadenceHours": 120,
     "name": "Competitor Monitor",
     "description": "Tracks competitor changes and opportunities.",
     "deployed": true,
