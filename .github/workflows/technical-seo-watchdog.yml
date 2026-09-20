@@ -74,6 +74,33 @@ jobs:
             echo "Watchdog report was not produced; skipping issue reconciliation."
           fi
 
+      - name: Expose result to owner Review Queue
+        if: always()
+        run: |
+          if [ -f artifacts/technical-seo-watchdog/report.json ]; then
+            python3 - <<'PY'
+          import base64, json, pathlib
+          p=pathlib.Path("artifacts/technical-seo-watchdog/report.json")
+          r=json.loads(p.read_text(encoding="utf-8"))
+          if "findings" not in r:
+              r["findings"]=[
+                  {
+                      "findingType": f.get("check","technical-seo"),
+                      "title": f.get("title") or f.get("check","Technical SEO finding"),
+                      "summary": f.get("evidence",""),
+                      "recommendedAction": f.get("recommended_fix",""),
+                      "url": f.get("url",""),
+                      "fingerprint": f.get("fingerprint","")
+                  }
+                  for f in r.get("failures",[])
+              ]
+          payload=json.dumps(r,ensure_ascii=False,separators=(",",":")).encode()
+          print("SLC_REVIEW_JSON_B64="+base64.b64encode(payload).decode())
+          PY
+          else
+            echo "SLC_REVIEW_ERROR=watchdog report missing"
+          fi
+
       - name: Upload watchdog report
         if: always()
         uses: actions/upload-artifact@v4
