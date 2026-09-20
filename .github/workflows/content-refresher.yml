@@ -1,7 +1,7 @@
 name: Content Refresher
 on:
-  schedule:
-    - cron: '20 15 * * *'
+  # Autonomous scheduling is intentionally paused until this agent consumes real
+  # site/opportunity inputs instead of production-cycle placeholder material.
   workflow_dispatch:
   pull_request:
     paths: ['scripts/content_refresher.py','tests/test_content_refresher.py','.github/workflows/content-refresher.yml']
