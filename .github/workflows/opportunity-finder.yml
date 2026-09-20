@@ -59,7 +59,7 @@ jobs:
           for workflow in ("content-creator.yml",):
               req=urllib.request.Request(
                   f"https://api.github.com/repos/{os.environ['REPO']}/actions/workflows/{workflow}/dispatches",
-                  data=json.dumps({"ref":"main","inputs":{"topic":"Live-site SEO opportunity review draft","city":"Thousand Oaks"}}).encode(),
+                  data=json.dumps({"ref":"main","inputs":{"topic":"Live-site SEO opportunity review draft","city":"Thousand Oaks","source_url":"https://thousandoaksinjury.com/","opportunity_type":"opportunity-finder"}}).encode(),
                   method="POST",
                   headers={"Authorization":f"Bearer {os.environ['GH_TOKEN']}","Accept":"application/vnd.github+json","Content-Type":"application/json"})
               urllib.request.urlopen(req).read()
