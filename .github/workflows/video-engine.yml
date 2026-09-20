@@ -1,7 +1,7 @@
 name: Video Engine
 on:
-  schedule:
-    - cron: '50 15 * * 2,5'
+  # Autonomous scheduling is intentionally paused until this agent consumes real
+  # site/opportunity inputs instead of production-cycle placeholder material.
   workflow_dispatch:
   pull_request:
     paths: ['scripts/video_engine.py','tests/test_video_engine.py','.github/workflows/video-engine.yml']
