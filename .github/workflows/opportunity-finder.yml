@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: opportunity-finder
@@ -40,3 +41,26 @@ jobs:
           if [ -f artifacts/opportunity-finder/report.json ]; then
             python -c "import base64,pathlib; print('SLC_REVIEW_JSON_B64='+base64.b64encode(pathlib.Path('artifacts/opportunity-finder/report.json').read_bytes()).decode())"
           fi
+
+  handoff:
+    needs: analyze
+    if: ${{ needs.analyze.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger safe downstream draft preparation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          # Safe GREEN handoff: downstream agents prepare review-only artifacts.
+          # No merge, deploy, or publication is authorized here.
+          for workflow in ("content-creator.yml",):
+              req=urllib.request.Request(
+                  f"https://api.github.com/repos/{os.environ['REPO']}/actions/workflows/{workflow}/dispatches",
+                  data=json.dumps({"ref":"main","inputs":{"topic":"Live-site SEO opportunity review draft","city":"Thousand Oaks"}}).encode(),
+                  method="POST",
+                  headers={"Authorization":f"Bearer {os.environ['GH_TOKEN']}","Accept":"application/vnd.github+json","Content-Type":"application/json"})
+              urllib.request.urlopen(req).read()
+          PY
