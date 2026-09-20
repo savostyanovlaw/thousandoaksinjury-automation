@@ -1,8 +1,7 @@
 name: Content Creator
 
 on:
-  schedule:
-    - cron: '5 16 * * 1,4'
+  # Event-driven: launched by Opportunity Finder or explicit operator request.
   workflow_dispatch:
     inputs:
       topic:
