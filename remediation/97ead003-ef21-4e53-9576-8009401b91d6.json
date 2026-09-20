@@ -1,0 +1,16 @@
+{
+  "jobId": "97ead003-ef21-4e53-9576-8009401b91d6",
+  "sourceAgentId": "technical-seo-watchdog",
+  "sourceRunId": "35472647992",
+  "findingType": "robots",
+  "summary": "Safe synthetic finding for approval-to-remediation validation; production is not unhealthy.",
+  "recommendedAction": "Ensure website/robots.txt declares Sitemap: https://thousandoaksinjury.com/sitemap.xml",
+  "executionPolicy": {
+    "branchOnly": true,
+    "testsRequired": true,
+    "pullRequestRequired": true,
+    "mergeAllowed": false,
+    "deployAllowed": false,
+    "publishAllowed": false
+  }
+}
