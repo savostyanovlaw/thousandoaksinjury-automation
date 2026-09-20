@@ -8,6 +8,8 @@ from html.parser import HTMLParser
 import json
 import os
 import time
+import re
+from collections import Counter
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -80,6 +82,10 @@ class _HtmlInspector(HTMLParser):
         elif tag == "meta":
             name = attrs_dict.get("name", "").strip().lower()
             content = attrs_dict.get("content", "").lower()
+            if name == "description":
+                self.meta_description = attrs_dict.get("content", "").strip()
+            if attrs_dict.get("type", "").lower() == "application/ld+json":
+                self._capture, self._buffer = "jsonld", []
             if name in {"robots", "googlebot"} and "noindex" in {t.strip() for t in content.replace(";", ",").split(",")}:
                 self.noindex = True
         elif tag == "a":
@@ -346,6 +352,46 @@ def run_checks(base_url: str = PRODUCTION_BASE_URL) -> list[Failure]:
             failures.append(make_failure("sitemap-sample", route, str(exc), "Restore the sitemap-listed URL or remove it from sitemap.xml."))
             continue
         failures.extend(_check_html_route(route, result))
+
+    # Crawl every sitemap URL for broken indexable pages and collect duplicate metadata.
+    titles: dict[str, list[str]] = {}
+    descriptions: dict[str, list[str]] = {}
+    for url in sitemap_urls:
+        parsed = urllib.parse.urlsplit(url)
+        if parsed.scheme != "https" or parsed.hostname != PRODUCTION_HOST:
+            continue
+        route = parsed.path or "/"
+        try:
+            result = fetch_url(url)
+        except RuntimeError as exc:
+            failures.append(make_failure("sitemap-url", route, str(exc), "Restore the URL or remove it from sitemap.xml."))
+            continue
+        if result.status != 200:
+            failures.append(make_failure("sitemap-url", route, f"HTTP {result.status}", "Restore the URL or remove it from sitemap.xml."))
+            continue
+        info = inspect_html(result.text)
+        if info.title:
+            titles.setdefault(info.title.casefold(), []).append(route)
+        if info.meta_description:
+            descriptions.setdefault(info.meta_description.casefold(), []).append(route)
+        # Validate same-site links found on crawled pages.
+        for href in info.internal_links:
+            absolute = urllib.parse.urljoin(result.final_url, href)
+            p = urllib.parse.urlsplit(absolute)
+            if p.hostname != PRODUCTION_HOST or p.scheme not in {"http","https"}:
+                continue
+            try:
+                linked = fetch_url(absolute, timeout=7, retries=0)
+                if linked.status >= 400:
+                    failures.append(make_failure("broken-link", route, f"{absolute} -> HTTP {linked.status}", "Fix or remove the broken internal link."))
+            except RuntimeError:
+                failures.append(make_failure("broken-link", route, f"{absolute} unreachable", "Fix or remove the unreachable internal link."))
+    for value, routes in titles.items():
+        if len(routes) > 1:
+            failures.append(make_failure("duplicate-title", routes[0], f"same title on {routes[:8]!r}", "Give indexable pages unique descriptive titles."))
+    for value, routes in descriptions.items():
+        if len(routes) > 1:
+            failures.append(make_failure("duplicate-description", routes[0], f"same description on {routes[:8]!r}", "Give indexable pages unique meta descriptions."))
 
     endpoint_url = base_url + "/api/case-review"
     try:
