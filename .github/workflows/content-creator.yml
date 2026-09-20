@@ -8,6 +8,14 @@ on:
         description: Personal injury topic
         required: true
         type: string
+      source_url:
+        description: Live page that produced the opportunity
+        required: false
+        type: string
+      opportunity_type:
+        description: Opportunity Finder issue type
+        required: false
+        type: string
       city:
         description: Target city
         required: true
@@ -32,7 +40,18 @@ jobs:
         env:
           TOPIC: ${{ inputs.topic || 'California personal injury attorney review draft' }}
           CITY: ${{ inputs.city || 'Thousand Oaks' }}
-        run: python scripts/content_creator.py --topic "$TOPIC" --city "$CITY" --output artifacts/content-creator/draft.json
+          SOURCE_URL: ${{ inputs.source_url || '' }}
+          OPPORTUNITY_TYPE: ${{ inputs.opportunity_type || '' }}
+        run: |
+          python scripts/content_creator.py --topic "$TOPIC" --city "$CITY" --output artifacts/content-creator/draft.json
+          python3 - <<'PY'
+          import json, os
+          p="artifacts/content-creator/draft.json"
+          d=json.load(open(p))
+          d["sourceUrl"]=os.environ.get("SOURCE_URL","")
+          d["opportunityType"]=os.environ.get("OPPORTUNITY_TYPE","")
+          open(p,"w").write(json.dumps(d,indent=2)+"\n")
+          PY
       - name: Upload draft
         uses: actions/upload-artifact@v4
         with:
