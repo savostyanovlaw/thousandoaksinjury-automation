@@ -45,14 +45,15 @@ export async function buildDashboardState({agents,github,pendingApprovals=[],aud
     const issues=issuesResult.status==='fulfilled' && Array.isArray(issuesResult.value)?issuesResult.value:[];
     const pulls=pullsResult.status==='fulfilled' && Array.isArray(pullsResult.value)?pullsResult.value:[];
     const stale=!!workflow.stale || workflowResult.status==='rejected' || issuesResult.status==='rejected' || pullsResult.status==='rejected';
+    const eventDriven=agent.trigger==='event-driven';
     let status;
     if(stale && !pending && !workflow.running && !workflow.currentFailure && !workflow.lastSuccess) status='HEALTHY';
-    else status=deriveAgentStatus({deployed:agent.deployed,disabled:agent.disabled,pendingApproval:pending>0,running:workflow.running,currentFailure:workflow.currentFailure || issues.length>0,lastSuccess:workflow.lastSuccess});
+    else status=deriveAgentStatus({deployed:agent.deployed,disabled:agent.disabled,pendingApproval:pending>0,running:workflow.running,currentFailure:workflow.currentFailure || issues.length>0,lastSuccess:workflow.lastSuccess,eventDriven});
     workflowActivity.push(...runActivity(agent,workflow));
     return {id:agent.id,name:agent.name,description:agent.description,status,stale,lastRun:workflow.lastRun||null,recentRuns:workflow.recentRuns||[],nextExpectedAt:nextExpectedAt(agent),issues,pulls,pendingApprovals:pending,capabilities:agent.deployed?agent.commands:[],cadenceHours:agent.cadenceHours||null};
   }));
-  const summary={healthy:0,running:0,needsAttention:0,waitingApproval:0,notDeployed:0,disabled:0,productionWebsite:'UNKNOWN'};
-  for(const a of normalized){ if(a.status==='HEALTHY') summary.healthy++; else if(a.status==='RUNNING') summary.running++; else if(a.status==='NEEDS ATTENTION') summary.needsAttention++; else if(a.status==='WAITING APPROVAL') summary.waitingApproval++; else if(a.status==='NOT DEPLOYED') summary.notDeployed++; else if(a.status==='DISABLED') summary.disabled++; }
+  const summary={healthy:0,running:0,needsAttention:0,waitingApproval:0,waitingForInput:0,notDeployed:0,disabled:0,productionWebsite:'UNKNOWN'};
+  for(const a of normalized){ if(a.status==='HEALTHY') summary.healthy++; else if(a.status==='RUNNING') summary.running++; else if(a.status==='NEEDS ATTENTION') summary.needsAttention++; else if(a.status==='WAITING APPROVAL') summary.waitingApproval++; else if(a.status==='WAITING FOR INPUT') summary.waitingForInput++; else if(a.status==='NOT DEPLOYED') summary.notDeployed++; else if(a.status==='DISABLED') summary.disabled++; }
   const watchdog=normalized.find(a=>a.id==='technical-seo-watchdog');
   summary.productionWebsite=watchdog?.stale?'DATA STALE':watchdog?.status==='HEALTHY'?'HEALTHY':watchdog?.status||'UNKNOWN';
   const attention=normalized.filter(a=>a.status==='NEEDS ATTENTION').map(a=>({agentId:a.id,title:`${a.name} needs attention`,issues:a.issues}));
