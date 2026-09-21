@@ -13,7 +13,7 @@ async function credentialFingerprint(token){
   const credentialType=value.startsWith('github_pat_')?'fine-grained':value.startsWith('ghp_')?'classic':'unknown';
   return {credentialPresent:true,credentialLength:value.length,credentialType,credentialFingerprint:fingerprint};
 }
-export function createGitHubAdapter({token,fetchImpl=fetch}){
+export function createGitHubAdapter({token,fetchImpl=fetch,sleepImpl=(ms)=>new Promise(r=>setTimeout(r,ms))}){
   const dispatchKeys=new Set();
   const hasWriteCredential=typeof token==='string' && Boolean(token.trim());
   async function json(url,opts={}){
@@ -150,23 +150,41 @@ ${x.body||''}`.toLowerCase().includes(String(marker).toLowerCase()))
     async getWorkflowRunReview(runId){
       const id=Number(runId);
       if(!Number.isFinite(id)) throw new Error('Invalid workflow run');
-      const run=await json(`https://api.github.com/repos/${REPO}/actions/runs/${id}`);
-      const artifactsData=await json(`https://api.github.com/repos/${REPO}/actions/runs/${id}/artifacts?per_page=100`);
-      const jobsData=await json(`https://api.github.com/repos/${REPO}/actions/runs/${id}/jobs?per_page=100`);
-      let reviewResult=null;
-      for(const job of (jobsData?.jobs||[])){
-        try{
-          const res=await fetchImpl(`https://api.github.com/repos/${REPO}/actions/jobs/${job.id}/logs`,{headers:headers(token),redirect:'follow'});
-          if(!res.ok) continue;
-          const log=await res.text();
-          const matches=[...log.matchAll(/SLC_REVIEW_JSON_B64=([A-Za-z0-9+/=]+)/g)];
-          if(matches.length){
-            const raw=atob(matches[matches.length-1][1]);
-            const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));
-            reviewResult=JSON.parse(new TextDecoder().decode(bytes));
-            break;
-          }
-        }catch{}
+      // A producing workflow's own "Notify Control Center" step calls the
+      // ingest endpoint (which reaches this function) from INSIDE that same
+      // still-running job, immediately after the preceding step printed
+      // this marker -- so the very first read of that job's own logs can
+      // race GitHub's own log-finalization for the step that just ran.
+      // Losing that race silently leaves a fully-GREEN report stuck
+      // PENDING forever (dashboard-load reconciliation never retries an
+      // approval that already exists). A short bounded retry absorbs the
+      // race without meaningfully slowing down the real "no review yet"
+      // case, since a genuinely absent marker still resolves after the
+      // same fixed number of attempts.
+      const maxAttempts=4;
+      const retryDelayMs=1500;
+      let run,artifactsData,jobsData,reviewResult=null;
+      for(let attempt=1;attempt<=maxAttempts;attempt++){
+        run=await json(`https://api.github.com/repos/${REPO}/actions/runs/${id}`);
+        artifactsData=await json(`https://api.github.com/repos/${REPO}/actions/runs/${id}/artifacts?per_page=100`);
+        jobsData=await json(`https://api.github.com/repos/${REPO}/actions/runs/${id}/jobs?per_page=100`);
+        reviewResult=null;
+        for(const job of (jobsData?.jobs||[])){
+          try{
+            const res=await fetchImpl(`https://api.github.com/repos/${REPO}/actions/jobs/${job.id}/logs`,{headers:headers(token),redirect:'follow'});
+            if(!res.ok) continue;
+            const log=await res.text();
+            const matches=[...log.matchAll(/SLC_REVIEW_JSON_B64=([A-Za-z0-9+/=]+)/g)];
+            if(matches.length){
+              const raw=atob(matches[matches.length-1][1]);
+              const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));
+              reviewResult=JSON.parse(new TextDecoder().decode(bytes));
+              break;
+            }
+          }catch{}
+        }
+        if(reviewResult || attempt===maxAttempts) break;
+        await sleepImpl(retryDelayMs);
       }
       const artifacts=(artifactsData?.artifacts||[]).map(a=>({id:a.id,name:a.name,size:a.size_in_bytes,expired:!!a.expired,createdAt:a.created_at,url:`https://github.com/${REPO}/actions/runs/${id}/artifacts/${a.id}`}));
       return {run:{id:run.id,name:run.name,status:run.status,conclusion:run.conclusion,createdAt:run.created_at,updatedAt:run.updated_at,url:run.html_url,headSha:run.head_sha,event:run.event},artifacts,reviewResult};
