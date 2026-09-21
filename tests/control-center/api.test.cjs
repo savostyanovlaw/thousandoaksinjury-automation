@@ -25,3 +25,25 @@ test('dashboard state can load safe GitHub diagnostics inline',async()=>{
 
 
 test('control state exposes remediation jobs without making them executable browser actions',async()=>{ const fs=require('node:fs'); const s=fs.readFileSync('control-center/functions/api/control/state.js','utf8'); assert.match(s,/listRemediationJobs/); assert.match(s,/state\.remediationJobs=optional\.remediationJobs/); });
+
+test('a failed loadStuck source degrades gracefully like the other optional sources',async()=>{
+  const {loadOptionalControlState}=await state();
+  const result=await loadOptionalControlState({
+    loadApprovals:async()=>[],
+    loadAudit:async()=>[],
+    loadStuck:async()=>{throw new Error('d1 unavailable')}
+  });
+  assert.deepEqual(result.stuckApprovals,[]);
+  assert.equal(result.degraded,true);
+  assert.deepEqual(result.degradedSources,['stuckApprovals']);
+});
+
+test('a stuck approval is surfaced in state.stuckApprovals and in the owner attention feed',async()=>{
+  const {loadOptionalControlState}=await state();
+  const stuck=[{id:'ap1',agentId:'content-creator',action:'MERGE_PR',decidedAt:'2026-01-01T00:00:00Z'}];
+  const result=await loadOptionalControlState({loadApprovals:async()=>[],loadAudit:async()=>[],loadStuck:async()=>stuck});
+  assert.deepEqual(result.stuckApprovals,stuck);
+  const fs=require('node:fs'); const s=fs.readFileSync('control-center/functions/api/control/state.js','utf8');
+  assert.match(s,/state\.stuckApprovals=optional\.stuckApprovals/);
+  assert.match(s,/did not finish executing/);
+});

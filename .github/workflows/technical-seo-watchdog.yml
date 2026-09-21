@@ -13,6 +13,11 @@ on:
         required: false
         default: false
         type: boolean
+      content_refresh_e2e_fixture:
+        description: 'Emit a safe synthetic content_stale finding for Content Refresher E2E validation'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -30,6 +35,13 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          # Full history is required for the content-staleness check: it
+          # reads each real page file's actual git commit history
+          # (git log -- <file>), which a shallow (depth-1) checkout cannot
+          # answer correctly -- every file would appear to have been
+          # touched by the single fetched commit regardless of its real age.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -62,6 +74,46 @@ jobs:
             f.write(chr(10))
           PY
 
+      - name: Inject safe content-refresh E2E fixture
+        if: github.event_name == 'workflow_dispatch' && inputs.content_refresh_e2e_fixture == true
+        run: |
+          python3 - <<'PY'
+          import json, urllib.request
+          p='artifacts/technical-seo-watchdog/report.json'
+          with open(p,encoding='utf-8') as f: r=json.load(f)
+          # Use the real live homepage's real current title/body so the
+          # synthetic finding still carries genuinely real page content --
+          # only the "this page is stale" claim itself is synthetic (marked
+          # e2eFixture, clearly not an assertion that production is
+          # actually stale), scoped to validating the Content Refresher
+          # dispatch path end to end.
+          req=urllib.request.Request("https://thousandoaksinjury.com/", headers={"User-Agent":"TechnicalSEO-Watchdog/1.0"})
+          with urllib.request.urlopen(req, timeout=15) as resp:
+              html=resp.read().decode("utf-8","replace")
+          import re
+          title_match=re.search(r"<title>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
+          title=(title_match.group(1).strip() if title_match else "Thousand Oaks Injury Attorney")[:500]
+          body=re.sub(r"<script.*?</script>|<style.*?</style>", " ", html, flags=re.IGNORECASE | re.DOTALL)
+          body=re.sub(r"<[^>]+>", " ", body)
+          body=" ".join(body.split())[:9000] or "Real existing homepage content."
+          r['healthy']=False
+          r.setdefault('findings', [])
+          r['findings'].append({
+              'findingType':'content_stale','check':'content_stale',
+              'title':'[E2E fixture] content staleness check',
+              'summary':'Safe synthetic staleness claim for Content Refresher E2E validation; production content freshness is not actually being asserted stale.',
+              'recommendedAction':'Have Content Refresher propose an updated draft for owner review.',
+              'url':'https://thousandoaksinjury.com/',
+              'source_revision':'e2e-fixture','page_title':title,'page_body':body,
+              'material_change_reason':'[E2E fixture] Safe synthetic reason for approval-to-Content-Refresher validation.',
+              'e2eFixture':True,
+          })
+          r['fixture']=True
+          with open(p,'w',encoding='utf-8') as f:
+            json.dump(r,f,indent=2)
+            f.write(chr(10))
+          PY
+
       - name: Reconcile watchdog GitHub issues
         if: always()
         env:
@@ -84,8 +136,14 @@ jobs:
           p=pathlib.Path("artifacts/technical-seo-watchdog/report.json")
           r=json.loads(p.read_text(encoding="utf-8"))
           if "findings" not in r:
+              # Keep every real field a failure carries (source_revision,
+              # page_title, page_body, material_change_reason for a
+              # content_stale finding) instead of a fixed subset -- the
+              # camelCase aliases below are added on top for the fields the
+              # approval/remediation route already expects by name.
               r["findings"]=[
                   {
+                      **f,
                       "findingType": f.get("check","technical-seo"),
                       "title": f.get("title") or f.get("check","Technical SEO finding"),
                       "summary": f.get("evidence",""),

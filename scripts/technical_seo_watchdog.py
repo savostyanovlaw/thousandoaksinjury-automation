@@ -7,13 +7,27 @@ import datetime as dt
 from html.parser import HTMLParser
 import json
 import os
+import subprocess
+import sys
 import time
 import re
 from collections import Counter
+from pathlib import Path
 import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+
+# This module is invoked both as a script (python scripts/technical_seo_watchdog.py,
+# which puts scripts/ itself on sys.path, not the repo root) and as a package
+# member (python -m unittest tests.test_technical_seo_watchdog, from the repo
+# root). Ensure the repo root is importable either way before reaching into
+# another sibling module.
+_REPO_ROOT = str(Path(__file__).resolve().parent.parent)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+from scripts.opportunity_finder import CITY_LABELS, PRACTICE_AREA_TOPICS
 
 PRODUCTION_BASE_URL = "https://thousandoaksinjury.com"
 PRODUCTION_HOST = "thousandoaksinjury.com"
@@ -39,6 +53,13 @@ class Failure:
     url: str
     evidence: str
     recommended_fix: str
+    # Populated only for check == "content_stale": the real data Content
+    # Refresher needs to produce an actual reviewable draft, never a
+    # placeholder. Empty for every other check.
+    source_revision: str = ""
+    page_title: str = ""
+    page_body: str = ""
+    material_change_reason: str = ""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -56,6 +77,7 @@ class HtmlInfo:
     title: str = ""
     meta_description: str = ""
     internal_links: list[str] = dataclasses.field(default_factory=list)
+    body_text: str = ""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -77,12 +99,16 @@ class _HtmlInspector(HTMLParser):
         self.title = ""
         self.meta_description = ""
         self.internal_links: list[str] = []
+        self.body_text_parts: list[str] = []
         self._in_title = False
         self._title_buf: list[str] = []
+        self._skip_text_tag: str | None = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attrs_dict = {str(k).lower(): (v or "") for k, v in attrs}
         tag = tag.lower()
+        if tag in ("script", "style"):
+            self._skip_text_tag = tag
         if tag == "title":
             self._in_title = True
             self._title_buf = []
@@ -112,11 +138,18 @@ class _HtmlInspector(HTMLParser):
     def handle_data(self, data: str) -> None:
         if self._in_title:
             self._title_buf.append(data)
+        elif not self._skip_text_tag:
+            text = data.strip()
+            if text:
+                self.body_text_parts.append(text)
 
     def handle_endtag(self, tag: str) -> None:
-        if tag.lower() == "title" and self._in_title:
+        tag = tag.lower()
+        if tag == "title" and self._in_title:
             self.title = "".join(self._title_buf).strip()
             self._in_title = False
+        if tag == self._skip_text_tag:
+            self._skip_text_tag = None
 
 
 def normalize_path(path: str) -> str:
@@ -178,6 +211,7 @@ def inspect_html(html_text: str) -> HtmlInfo:
         title=parser.title,
         meta_description=parser.meta_description,
         internal_links=parser.internal_links,
+        body_text=" ".join(parser.body_text_parts),
     )
 
 
@@ -445,6 +479,103 @@ def run_checks(base_url: str = PRODUCTION_BASE_URL) -> list[Failure]:
     return list(unique.values())
 
 
+CONTENT_STALENESS_MAX_AGE_DAYS = 270
+
+
+def _real_content_pages() -> list[tuple[str, str, str, str]]:
+    """(route, source file, real topic, real city) for every real, currently
+    published page this repository serves -- the same practice-area/city
+    vocabulary Opportunity Finder already uses for real Content Creator
+    handoffs, so a refresh proposal describes the same real subject matter
+    a human reviewer already recognizes from the rest of the fleet."""
+    pages = [("/", "website/index.html", "personal injury", "Thousand Oaks")]
+    for slug, topic in PRACTICE_AREA_TOPICS.items():
+        pages.append((f"/{slug}/", f"website/{slug}/index.html", topic, "Thousand Oaks"))
+    for slug, city in CITY_LABELS.items():
+        pages.append((f"/{slug}/", f"website/{slug}/index.html", "personal injury", city))
+    return pages
+
+
+def git_last_commit(repo_root: str, relative_path: str) -> tuple[str, dt.datetime] | None:
+    """The real, verifiable (sha, commit-date) of the last commit that
+    touched this file -- never a fabricated or assumed staleness signal."""
+    try:
+        result = subprocess.run(
+            ["git", "log", "-1", "--format=%H%x1f%cI", "--", relative_path],
+            cwd=repo_root, capture_output=True, text=True, timeout=10, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    line = result.stdout.strip()
+    if not line or "\x1f" not in line:
+        return None
+    sha, _, date_str = line.partition("\x1f")
+    try:
+        return sha, dt.datetime.fromisoformat(date_str)
+    except ValueError:
+        return None
+
+
+def check_content_staleness(
+    base_url: str = PRODUCTION_BASE_URL,
+    repo_root: str = ".",
+    now: dt.datetime | None = None,
+    max_age_days: int = CONTENT_STALENESS_MAX_AGE_DAYS,
+    commit_lookup=None,
+    page_fetch=None,
+) -> list[Failure]:
+    """Real, evidence-based staleness signal for Content Refresher: a page's
+    own git history, not a blind schedule or a fabricated placeholder. A
+    page whose real source file has not been committed to in max_age_days is
+    a legitimate, material reason to propose a refresh; a page edited last
+    week never is, no matter how long this watchdog has been running.
+
+    Only reaches out to the live site for pages that already cleared the
+    staleness bar (usually none), to capture the real current title/body the
+    refresh draft is built from -- never for every page on every run.
+    """
+    now = now or dt.datetime.now(dt.timezone.utc)
+    lookup = commit_lookup or (lambda path: git_last_commit(repo_root, path))
+    fetch = page_fetch or (lambda url: inspect_html(fetch_url(url).text))
+    base = base_url.rstrip("/")
+    findings: list[Failure] = []
+    for route, file_path, topic, city in _real_content_pages():
+        commit = lookup(file_path)
+        if commit is None:
+            # No real git history to check against -- never assume staleness.
+            continue
+        sha, commit_date = commit
+        age_days = (now - commit_date).days
+        if age_days < max_age_days:
+            continue
+        url = base + route
+        try:
+            info = fetch(url)
+        except RuntimeError as exc:
+            findings.append(make_failure(
+                "content-stale-unreachable", route, str(exc),
+                "Restore the page's reachability before a refresh can be prepared.",
+            ))
+            continue
+        reason = (
+            f"No substantive update in {age_days} days (source last changed "
+            f"{commit_date.date().isoformat()}); threshold {max_age_days} days."
+        )
+        findings.append(Failure(
+            fingerprint=f"watchdog:content_stale:{normalize_path(route)}",
+            title=f"[Technical SEO Watchdog] content_stale: {normalize_path(route)}",
+            check="content_stale",
+            url=url,
+            evidence=reason,
+            recommended_fix=f"Have Content Refresher propose an updated draft for this {topic} page in {city}; owner review required before any change is applied.",
+            source_revision=sha,
+            page_title=info.title or f"{city} {topic.title()} Lawyer",
+            page_body=(info.body_text or "")[:9000],
+            material_change_reason=reason,
+        ))
+    return findings
+
+
 def _utc_now_iso() -> str:
     return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -466,6 +597,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Check live Thousand Oaks Injury technical SEO health.")
     parser.add_argument("--base-url", default=PRODUCTION_BASE_URL)
     parser.add_argument("--output", default="artifacts/technical-seo-watchdog/report.json")
+    parser.add_argument("--repo-root", default=".", help="Local checkout root for the git-history content-staleness check")
+    parser.add_argument("--skip-content-staleness", action="store_true", help="Skip the git-history content-staleness check (used in environments without real git history, e.g. shallow test fixtures)")
     args = parser.parse_args()
     # A detected SEO/content finding is the watchdog's intended product, not an
     # operational failure of the watchdog itself: it must not turn the GitHub
@@ -474,6 +607,8 @@ def main() -> int:
     # Producing the report successfully is what "healthy agent run" means
     # here; an uncaught exception below still fails the process normally.
     failures = run_checks(args.base_url)
+    if not args.skip_content_staleness:
+        failures = failures + check_content_staleness(args.base_url, args.repo_root)
     write_report(args.output, args.base_url, failures)
     if failures:
         for failure in failures:

@@ -1,3 +1,4 @@
+import datetime as dt
 import json
 import tempfile
 import unittest
@@ -11,6 +12,8 @@ from scripts.technical_seo_watchdog import (
     parse_sitemap,
     classify_case_review_get,
     make_failure,
+    check_content_staleness,
+    HtmlInfo,
 )
 from scripts.technical_seo_watchdog_runner import inspect_html
 
@@ -132,7 +135,7 @@ class WatchdogCoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             output = str(Path(tmp) / "report.json")
             with patch.object(watchdog, "run_checks", return_value=[failure]):
-                with patch("sys.argv", ["technical_seo_watchdog.py", "--output", output]):
+                with patch("sys.argv", ["technical_seo_watchdog.py", "--output", output, "--skip-content-staleness"]):
                     self.assertEqual(watchdog.main(), 0)
             report = json.loads(Path(output).read_text(encoding="utf-8"))
             self.assertFalse(report["healthy"])
@@ -142,8 +145,76 @@ class WatchdogCoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             output = str(Path(tmp) / "report.json")
             with patch.object(watchdog, "run_checks", return_value=[]):
-                with patch("sys.argv", ["technical_seo_watchdog.py", "--output", output]):
+                with patch("sys.argv", ["technical_seo_watchdog.py", "--output", output, "--skip-content-staleness"]):
                     self.assertEqual(watchdog.main(), 0)
+
+
+class ContentStalenessTests(unittest.TestCase):
+    NOW = dt.datetime(2027, 1, 1, tzinfo=dt.timezone.utc)
+
+    def test_a_recently_committed_page_is_never_flagged_stale(self):
+        lookup = lambda path: ("deadbeef", self.NOW - dt.timedelta(days=5))
+        findings = check_content_staleness(now=self.NOW, commit_lookup=lookup, page_fetch=lambda url: HtmlInfo([], False, False, False))
+        self.assertEqual(findings, [])
+
+    def test_a_page_with_no_real_git_history_is_never_fabricated_as_stale(self):
+        lookup = lambda path: None
+        findings = check_content_staleness(now=self.NOW, commit_lookup=lookup, page_fetch=lambda url: HtmlInfo([], False, False, False))
+        self.assertEqual(findings, [])
+
+    def test_a_page_untouched_past_the_threshold_is_flagged_with_real_evidence(self):
+        old_date = self.NOW - dt.timedelta(days=400)
+        lookup = lambda path: ("cafef00d", old_date)
+        fetched = HtmlInfo([], False, False, False, title="Thousand Oaks Dog Bite Lawyer", body_text="Real existing page content about dog bites.")
+        findings = check_content_staleness(now=self.NOW, commit_lookup=lookup, page_fetch=lambda url: fetched)
+        self.assertTrue(findings, "a page 400 days stale by real git history must be flagged")
+        finding = findings[0]
+        self.assertEqual(finding.check, "content_stale")
+        self.assertEqual(finding.source_revision, "cafef00d")
+        self.assertEqual(finding.page_title, "Thousand Oaks Dog Bite Lawyer")
+        self.assertIn("Real existing page content", finding.page_body)
+        self.assertIn("400 days", finding.evidence)
+        self.assertIn("400 days", finding.material_change_reason)
+
+    def test_an_unreachable_stale_page_is_reported_but_does_not_crash(self):
+        old_date = self.NOW - dt.timedelta(days=400)
+        lookup = lambda path: ("cafef00d", old_date)
+        def failing_fetch(url):
+            raise RuntimeError("network unreachable")
+        findings = check_content_staleness(now=self.NOW, commit_lookup=lookup, page_fetch=failing_fetch)
+        self.assertTrue(any(f.check == "content-stale-unreachable" for f in findings))
+
+    def test_every_flagged_page_has_a_non_empty_page_body_for_content_refresher(self):
+        # content_refresher.py rejects an empty body outright -- if this
+        # were ever empty for a real flagged page, the downstream dispatch
+        # would fail with a clear error rather than silently drafting
+        # nothing, but a real page always has extractable body text.
+        old_date = self.NOW - dt.timedelta(days=400)
+        lookup = lambda path: ("cafef00d", old_date)
+        fetched = HtmlInfo([], False, False, False, title="t", body_text="some real page text")
+        findings = check_content_staleness(now=self.NOW, commit_lookup=lookup, page_fetch=lambda url: fetched)
+        for finding in findings:
+            if finding.check == "content_stale":
+                self.assertTrue(finding.page_body.strip())
+
+
+class GitLastCommitTests(unittest.TestCase):
+    def test_returns_none_for_a_path_with_no_history_or_a_non_git_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(watchdog.git_last_commit(tmp, "does-not-exist.html"))
+
+
+class BodyTextExtractionTests(unittest.TestCase):
+    def test_extracts_visible_text_and_excludes_script_and_style_content(self):
+        html = (
+            "<html><head><style>.x{color:red}</style></head>"
+            "<body><script>var x = 'not visible';</script>"
+            "<p>Real visible page text.</p></body></html>"
+        )
+        info = inspect_html(html)
+        self.assertIn("Real visible page text.", info.body_text)
+        self.assertNotIn("not visible", info.body_text)
+        self.assertNotIn("color:red", info.body_text)
 
 
 if __name__ == "__main__":
