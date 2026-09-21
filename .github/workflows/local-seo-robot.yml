@@ -40,6 +40,34 @@ jobs:
             python -c "import base64,pathlib; print('SLC_REVIEW_JSON_B64='+base64.b64encode(pathlib.Path('artifacts/local-seo-robot/report.json').read_bytes()).decode())"
           fi
 
+      - name: TEMP diagnostic - verbose ingest probe (to be reverted)
+        if: always()
+        env:
+          CONTROL_CENTER_URL: ${{ vars.CONTROL_CENTER_URL }}
+          CONTROL_INGEST_TOKEN: ${{ secrets.CONTROL_INGEST_TOKEN }}
+        run: |
+          echo "CONTROL_CENTER_URL set: $([ -n "$CONTROL_CENTER_URL" ] && echo yes || echo no), length: ${#CONTROL_CENTER_URL}"
+          echo "CONTROL_INGEST_TOKEN set: $([ -n "$CONTROL_INGEST_TOKEN" ] && echo yes || echo no), length: ${#CONTROL_INGEST_TOKEN}"
+          echo "--- with configured secret ---"
+          curl -sS -i -X POST "$CONTROL_CENTER_URL/api/control/ingest/review-result" \
+            -H "X-Control-Ingest-Token: $CONTROL_INGEST_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"agentId":"technical-seo-watchdog","runId":"diag-1"}' || true
+          echo ""
+          echo "--- with deliberately wrong token ---"
+          curl -sS -i -X POST "$CONTROL_CENTER_URL/api/control/ingest/review-result" \
+            -H "X-Control-Ingest-Token: definitely-wrong-token-for-diagnostics" \
+            -H "Content-Type: application/json" \
+            -d '{"agentId":"technical-seo-watchdog","runId":"diag-2"}' || true
+          echo ""
+          echo "--- with no token header ---"
+          curl -sS -i -X POST "$CONTROL_CENTER_URL/api/control/ingest/review-result" \
+            -H "Content-Type: application/json" \
+            -d '{"agentId":"technical-seo-watchdog","runId":"diag-3"}' || true
+          echo ""
+          echo "--- GET on control-center state (unauthenticated, expect 401 redirect-style JSON) ---"
+          curl -sS -i "$CONTROL_CENTER_URL/api/control/state" || true
+
       - name: Notify Control Center of new result
         if: always()
         env:
