@@ -406,6 +406,14 @@ def run_checks(base_url: str = PRODUCTION_BASE_URL) -> list[Failure]:
             p = urllib.parse.urlsplit(absolute)
             if p.hostname != PRODUCTION_HOST or p.scheme not in {"http","https"}:
                 continue
+            if p.path.startswith("/cdn-cgi/"):
+                # Cloudflare edge-managed paths (e.g. the email-obfuscation
+                # decode link /cdn-cgi/l/email-protection) are not part of
+                # this site's own content and are not something a fix here
+                # can change; a direct GET without the client-side decode
+                # script/fragment routinely 404s even though the real
+                # mailto: link it replaces works normally for visitors.
+                continue
             try:
                 linked = fetch_url(absolute, timeout=7, retries=0)
                 if linked.status >= 400:
