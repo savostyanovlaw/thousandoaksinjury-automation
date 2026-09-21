@@ -27,15 +27,35 @@ name: Remediation Preparer
         description: Recommended remediation action
         required: true
         type: string
+      autonomy:
+        description: 'GREEN: merge, verify, and roll back automatically. YELLOW (default): prepare a PR only, for a human to review and merge.'
+        required: false
+        type: string
+        default: YELLOW
+      fixture_marker_value:
+        description: 'E2E fixture only (finding_type=e2e_fixture_marker): exact marker value to write to the fixture file.'
+        required: false
+        type: string
+      fixture_force_verification_failure:
+        description: 'E2E fixture only: deliberately fail post-merge verification to prove the bounded retry/rollback/escalation path.'
+        required: false
+        type: string
+        default: 'false'
 permissions:
   contents: write
   pull-requests: write
+  id-token: write
 jobs:
   prepare:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Prepare bounded remediation
+        id: prepare
         shell: bash
         env:
           JOB_ID: ${{ inputs.job_id }}
@@ -44,26 +64,34 @@ jobs:
           FINDING_TYPE: ${{ inputs.finding_type }}
           SUMMARY: ${{ inputs.summary }}
           RECOMMENDED_ACTION: ${{ inputs.recommended_action }}
-          GH_TOKEN: ${{ github.token }}
+          AUTONOMY: ${{ inputs.autonomy }}
+          FIXTURE_MARKER_VALUE: ${{ inputs.fixture_marker_value }}
         run: |
           set -euo pipefail
           BRANCH="remediation/$JOB_ID"
           git checkout -b "$BRANCH"
           mkdir -p remediation
+          MERGE_ALLOWED=false
+          if [ "$AUTONOMY" = "GREEN" ]; then MERGE_ALLOWED=true; fi
           python3 - <<'PY'
-          import json, os, pathlib
-          p=pathlib.Path("remediation")/(os.environ["JOB_ID"]+".json")
-          p.write_text(json.dumps({
-            "jobId":os.environ["JOB_ID"],"sourceAgentId":os.environ["SOURCE_AGENT_ID"],
-            "sourceRunId":os.environ["SOURCE_RUN_ID"],"findingType":os.environ["FINDING_TYPE"],
-            "summary":os.environ["SUMMARY"],"recommendedAction":os.environ["RECOMMENDED_ACTION"],
-            "executionPolicy":{"branchOnly":True,"testsRequired":True,"pullRequestRequired":True,
-              "mergeAllowed":False,"deployAllowed":False,"publishAllowed":False}
-          },indent=2)+"\n")
+          import json, os
+          p="remediation/"+os.environ["JOB_ID"]+".json"
+          with open(p, "w") as f:
+              json.dump({
+                "jobId": os.environ["JOB_ID"], "sourceAgentId": os.environ["SOURCE_AGENT_ID"],
+                "sourceRunId": os.environ["SOURCE_RUN_ID"], "findingType": os.environ["FINDING_TYPE"],
+                "summary": os.environ["SUMMARY"], "recommendedAction": os.environ["RECOMMENDED_ACTION"],
+                "autonomy": os.environ["AUTONOMY"],
+                "executionPolicy": {"branchOnly": True, "testsRequired": True, "pullRequestRequired": True,
+                  "mergeAllowed": os.environ["AUTONOMY"] == "GREEN", "deployAllowed": False, "publishAllowed": False}
+              }, f, indent=2)
+              f.write("\n")
           PY
           # Only deterministic, allowlisted technical fixes may modify repository files here.
+          # GREEN autonomy is authorized ONLY for exactly these allowlisted cases: each one
+          # is a narrow, additive, reversible technical change, never content.
           case "$FINDING_TYPE" in
-            robots)
+            robots-sitemap)
               python3 - <<'PY'
           from pathlib import Path
           p=Path("website/robots.txt")
@@ -74,6 +102,14 @@ jobs:
               p.write_text(s)
           PY
               ;;
+            e2e_fixture_marker)
+              # Gated self-healing E2E fixture only (see
+              # technical-seo-watchdog.yml's content_refresh_e2e_fixture-style
+              # injection). Touches ONLY this repository-internal marker file,
+              # never anything under website/, so it can never reach the live
+              # production site regardless of autonomy or outcome.
+              printf '%s\n' "$FIXTURE_MARKER_VALUE" > remediation/e2e-fixture-marker.txt
+              ;;
             *)
               echo "No deterministic repository mutation is allowlisted for $FINDING_TYPE; metadata-only remediation PR."
               ;;
@@ -81,9 +117,165 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_*.py'
           git config user.name "SLC Remediation Agent"
           git config user.email "actions@users.noreply.github.com"
-          git add remediation/ website/robots.txt
-          git commit -m "Prepare remediation $JOB_ID"
-          git push origin "$BRANCH"
-          if ! gh pr create --base main --head "$BRANCH" --title "Remediation: $SUMMARY" --body "Prepared from approved report run $SOURCE_RUN_ID. Tests passed. No content publication is authorized by this workflow."; then
+          git add remediation/
+          git add website/robots.txt 2>/dev/null || true
+          if git diff --cached --quiet; then
+            # A genuinely useful outcome, not a failure: the condition this
+            # finding described may already be resolved (fixed by hand, by an
+            # earlier run, or by a race with another remediation). There is
+            # nothing to commit, so there is nothing to merge or verify --
+            # report it as already-resolved rather than forcing a no-op PR.
+            echo "No repository changes were needed; the condition may already be resolved."
+            echo "no_change=true" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "Prepare remediation $JOB_ID"
+            git push origin "$BRANCH"
+            echo "no_change=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create pull request
+        id: pr
+        if: steps.prepare.outputs.no_change != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_ID: ${{ inputs.job_id }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SUMMARY: ${{ inputs.summary }}
+        run: |
+          BRANCH="remediation/$JOB_ID"
+          if gh pr create --base main --head "$BRANCH" --title "Remediation: $SUMMARY" --body "Prepared from approved report run $SOURCE_RUN_ID. Tests passed. No content publication is authorized by this workflow."; then
+            PR_NUMBER=$(gh pr view "$BRANCH" --json number -q .number)
+            echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          else
             echo "::warning::Branch prepared and pushed, but repository policy blocks GitHub Actions from creating pull requests. The Control Center/GitHub integration must open the PR."
+            echo "pr_number=" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Everything below this point only runs for autonomy=GREEN. A YELLOW
+      # job's terminal state is exactly what it always was: an open,
+      # unmerged PR waiting for a human to review and merge it themselves.
+      - name: Merge, verify, and roll back if needed (GREEN autonomy only)
+        id: green
+        if: inputs.autonomy == 'GREEN'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_ID: ${{ inputs.job_id }}
+          FINDING_TYPE: ${{ inputs.finding_type }}
+          NO_CHANGE: ${{ steps.prepare.outputs.no_change }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          FIXTURE_MARKER_VALUE: ${{ inputs.fixture_marker_value }}
+          FIXTURE_FORCE_FAILURE: ${{ inputs.fixture_force_verification_failure }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          STATUS=""
+          ERROR=""
+          MERGED_SHA=""
+
+          if [ "$NO_CHANGE" = "true" ]; then
+            STATUS="VERIFIED"
+            ERROR="Condition already resolved before this run; no repository change was needed."
+          elif [ -z "$PR_NUMBER" ]; then
+            STATUS="FAILED"
+            ERROR="No pull request was created (repository policy blocked PR creation)."
+          else
+            BRANCH="remediation/$JOB_ID"
+            if gh pr merge "$PR_NUMBER" --squash --delete-branch; then
+              git fetch origin main --quiet
+              MERGED_SHA=$(git rev-parse origin/main)
+              VERIFIED=false
+              # Bounded verification of the REAL resolved condition: up to 5
+              # attempts, 15s apart (well inside this job's 10-minute
+              # timeout), never unbounded.
+              for attempt in 1 2 3 4 5; do
+                case "$FINDING_TYPE" in
+                  robots-sitemap)
+                    if curl -sS --max-time 15 "https://thousandoaksinjury.com/robots.txt" 2>/dev/null | grep -qF "Sitemap: https://thousandoaksinjury.com/sitemap.xml"; then
+                      VERIFIED=true; break
+                    fi
+                    ;;
+                  e2e_fixture_marker)
+                    if [ "$FIXTURE_FORCE_FAILURE" = "true" ]; then
+                      VERIFIED=false
+                    else
+                      ACTUAL=$(gh api "repos/$REPO/contents/remediation/e2e-fixture-marker.txt?ref=main" --jq '.content' 2>/dev/null | base64 -d 2>/dev/null | tr -d '\n' || echo "")
+                      if [ "$ACTUAL" = "$FIXTURE_MARKER_VALUE" ]; then VERIFIED=true; break; fi
+                    fi
+                    ;;
+                  *)
+                    # No deterministic post-condition is defined for this
+                    # finding type; a successful merge is the extent of what
+                    # can be checked automatically.
+                    VERIFIED=true
+                    break
+                    ;;
+                esac
+                sleep 15
+              done
+              if [ "$VERIFIED" = "true" ]; then
+                STATUS="VERIFIED"
+              else
+                git checkout -B main origin/main --quiet
+                if git revert --no-edit "$MERGED_SHA" >/dev/null 2>&1 && git push origin main; then
+                  STATUS="ROLLED_BACK"
+                  ERROR="Post-merge verification failed after $attempt attempt(s); the merge was reverted automatically."
+                else
+                  STATUS="FAILED"
+                  ERROR="Post-merge verification failed after $attempt attempt(s), and the automatic rollback also failed; manual intervention required."
+                fi
+              fi
+            else
+              STATUS="FAILED"
+              ERROR="Automatic merge failed (branch protection or a real conflict)."
+            fi
+          fi
+
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          echo "merged_sha=$MERGED_SHA" >> "$GITHUB_OUTPUT"
+          {
+            echo 'error<<REMEDIATION_ERROR_EOF'
+            echo "$ERROR"
+            echo 'REMEDIATION_ERROR_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Report result to Control Center (GREEN autonomy only)
+        if: inputs.autonomy == 'GREEN' && always()
+        env:
+          CONTROL_CENTER_URL: ${{ vars.CONTROL_CENTER_URL }}
+          JOB_ID: ${{ inputs.job_id }}
+          STATUS: ${{ steps.green.outputs.status }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          MERGED_SHA: ${{ steps.green.outputs.merged_sha }}
+          ERROR_TEXT: ${{ steps.green.outputs.error }}
+        run: |
+          set -euo pipefail
+          FINAL_STATUS="$STATUS"
+          if [ -z "$FINAL_STATUS" ]; then
+            FINAL_STATUS="FAILED"
+          fi
+          export FINAL_STATUS
+          if [ -z "$CONTROL_CENTER_URL" ]; then
+            echo "::warning::CONTROL_CENTER_URL not configured; remediation result not reported. It will remain visible as DISPATCHED until an owner investigates."
+          else
+            OIDC_TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=slc-ai-control-ingest" | python3 -c "import json,sys; print(json.load(sys.stdin).get('value',''))")
+            if [ -z "$OIDC_TOKEN" ]; then
+              echo "::warning::Could not obtain a GitHub OIDC token; remediation result not reported."
+            else
+              PAYLOAD=$(python3 -c "
+          import json, os
+          print(json.dumps({
+            'jobId': os.environ['JOB_ID'],
+            'runId': os.environ['GITHUB_RUN_ID'],
+            'status': os.environ['FINAL_STATUS'],
+            'prNumber': int(os.environ['PR_NUMBER']) if os.environ.get('PR_NUMBER') else None,
+            'mergedSha': os.environ.get('MERGED_SHA') or None,
+            'error': (os.environ.get('ERROR_TEXT') or None)
+          }))
+          ")
+              curl -sS -f -X POST "$CONTROL_CENTER_URL/api/control/ingest/remediation-result" \
+                -H "Authorization: Bearer $OIDC_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "$PAYLOAD" \
+                || echo "::warning::Control Center ingest call failed for remediation result; the job will remain visible as DISPATCHED/MERGED until an owner investigates."
+            fi
           fi

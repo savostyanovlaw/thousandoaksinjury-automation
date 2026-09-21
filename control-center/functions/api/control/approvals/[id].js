@@ -4,6 +4,7 @@ import { targetHash, assertApprovalExecutable } from '../../../../lib/approvals.
 import { getApproval, decideApproval, consumeApproval, ensureControlSchema } from '../../../../lib/approval-store.js';
 import { writeAudit } from '../../../../lib/audit.js';
 import { createRemediationJob, updateRemediationJob } from '../../../../lib/remediation-store.js';
+import { classifyFindingType } from '../../../../lib/autonomy.js';
 import { assertExactFields, errorResponse, jsonResponse, parseJson, requireSameOrigin } from '../../../../lib/http.js';
 
 export async function executeApprovalDecision({record,decision,user,db,github}){
@@ -57,7 +58,8 @@ export async function executeApprovalDecision({record,decision,user,db,github}){
         const summary=String(item?.summary||item?.evidence||item?.title||item?.message||r?.title||'Approved agent finding').slice(0,1000);
         const recommendedAction=String(item?.recommendedAction||item?.recommended_fix||item?.recommendation||r?.recommendation||'Prepare a repository-level fix for owner review.').slice(0,1000);
         const remediationAgentId=route(type);
-        const job={id:crypto.randomUUID(),sourceAgentId:record.agentId,sourceRunId:String(record.targetId),ownerApprovalId:record.id,findingType:String(type),summary,recommendedAction,rawFinding:item||{},remediationAgentId,createdAt:new Date().toISOString()};
+        const autonomy=classifyFindingType(type);
+        const job={id:crypto.randomUUID(),sourceAgentId:record.agentId,sourceRunId:String(record.targetId),ownerApprovalId:record.id,findingType:String(type),summary,recommendedAction,rawFinding:item||{},remediationAgentId,autonomy,createdAt:new Date().toISOString()};
         await createRemediationJob(db,job);
         if(!remediationAgentId){
           await updateRemediationJob(db,job.id,'BLOCKED');
@@ -104,23 +106,33 @@ export async function executeApprovalDecision({record,decision,user,db,github}){
   }
 }
 
+// Shared by the human-facing HTTP route below and by the automatic
+// GREEN-report trigger (lib/auto-remediate.js), so both paths execute and
+// audit through the exact same code -- an autonomous decision is not a
+// different, lighter-weight code path than a human one, only a different
+// actor string.
+export async function applyApprovalDecision({record,decision,actor,db,github}){
+  const result=await executeApprovalDecision({record,decision,user:{email:actor},db,github});
+  // A structured {failed:true} result still means the approval WAS
+  // claimed (decideApproval already succeeded inside
+  // executeApprovalDecision) -- it must be audited as a failed execution,
+  // never silently dropped, so the owner has a durable record of exactly
+  // what was approved and that its execution did not complete.
+  const auditResult=decision!=='APPROVE'
+    ? 'rejected'
+    : result.failed
+      ? (record.action==='REVIEW_RESULT'?'review-approved-with-errors':'approved-execution-failed')
+      : (record.action==='REVIEW_RESULT'?'review-approved':'approved-executed');
+  await writeAudit(db,{timestamp:new Date().toISOString(),actor,agentId:record.agentId,action:record.action,targetType:record.targetType,targetId:record.targetId,targetRevision:record.targetRevision,autonomy:record.action==='REVIEW_RESULT'?'YELLOW':'RED',result:auditResult,approvalId:record.id,githubPrNumber:Number(record.targetId)});
+  return result;
+}
+
 export async function onRequestPost(context){
   try{
     const user=await requireAuthorizedUser(context,context.env); requireSameOrigin(context.request); const body=await parseJson(context.request); assertExactFields(body,['decision'],['decision']);
     await ensureControlSchema(context.env.CONTROL_DB);
     const record=await getApproval(context.env.CONTROL_DB,context.params.id); const github=createGitHubAdapter({token:context.env.GITHUB_TOKEN});
-    const result=await executeApprovalDecision({record,decision:body.decision,user,db:context.env.CONTROL_DB,github});
-    // A structured {failed:true} result still means the approval WAS
-    // claimed (decideApproval already succeeded inside
-    // executeApprovalDecision) -- it must be audited as a failed execution,
-    // never silently dropped, so the owner has a durable record of exactly
-    // what was approved and that its execution did not complete.
-    const auditResult=body.decision!=='APPROVE'
-      ? 'rejected'
-      : result.failed
-        ? (record.action==='REVIEW_RESULT'?'review-approved-with-errors':'approved-execution-failed')
-        : (record.action==='REVIEW_RESULT'?'review-approved':'approved-executed');
-    await writeAudit(context.env.CONTROL_DB,{timestamp:new Date().toISOString(),actor:user.email,agentId:record.agentId,action:record.action,targetType:record.targetType,targetId:record.targetId,targetRevision:record.targetRevision,autonomy:record.action==='REVIEW_RESULT'?'YELLOW':'RED',result:auditResult,approvalId:record.id,githubPrNumber:Number(record.targetId)});
+    const result=await applyApprovalDecision({record,decision:body.decision,actor:user.email,db:context.env.CONTROL_DB,github});
     return jsonResponse(result);
   }catch(error){ return errorResponse(error); }
 }

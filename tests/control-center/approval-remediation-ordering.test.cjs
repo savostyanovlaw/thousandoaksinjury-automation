@@ -45,7 +45,13 @@ function fakeDb({legacyUniqueSchema=false}={}){
             return {meta:{changes:1}};
           }
           if(/^UPDATE remediation_jobs SET status/i.test(trimmed)){
-            const [status,,,,,id]=args;
+            // id is always the last bound parameter (... WHERE id=?), whatever
+            // the exact number of SET columns/COALESCE args this statement
+            // grows to -- pinning to a fixed positional index here previously
+            // broke silently the moment updateRemediationJob() gained new
+            // columns to set.
+            const [status]=args;
+            const id=args[args.length-1];
             const job=remediationJobs.find(j=>j.id===id);
             if(job) job.status=status;
             return {meta:{changes:job?1:0}};
