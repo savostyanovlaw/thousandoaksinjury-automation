@@ -22,6 +22,28 @@ on:
         description: Real English source body to localize
         required: true
         type: string
+      localized_title:
+        description: Actual Russian localized title produced by the localization engine
+        required: false
+        type: string
+      localized_body:
+        description: Actual Russian localized body produced by the localization engine
+        required: false
+        type: string
+      qa_issues_json:
+        description: JSON array of localization QA issues
+        required: false
+        default: '[]'
+        type: string
+      change_request:
+        description: Owner feedback for a revision of the same localization
+        required: false
+        type: string
+      localization_revision:
+        description: Revision number of this Russian localization
+        required: false
+        default: '1'
+        type: string
   pull_request:
     paths: ['scripts/russian_language_robot.py','tests/test_russian_language_robot.py','.github/workflows/russian-language-robot.yml']
 permissions: {contents: read, id-token: write}
@@ -40,12 +62,23 @@ jobs:
           SOURCE_REVISION: ${{ inputs.source_revision }}
           TITLE: ${{ inputs.title }}
           BODY: ${{ inputs.body }}
+          LOCALIZED_TITLE: ${{ inputs.localized_title }}
+          LOCALIZED_BODY: ${{ inputs.localized_body }}
+          QA_ISSUES_JSON: ${{ inputs.qa_issues_json }}
+          CHANGE_REQUEST: ${{ inputs.change_request }}
+          LOCALIZATION_REVISION: ${{ inputs.localization_revision }}
         run: |
           mkdir -p artifacts/russian-language-robot
           python3 - <<'PY'
           import json, os
           from scripts.russian_language_robot import localize
-          result=localize(os.environ["SOURCE_ID"],os.environ["SOURCE_REVISION"],os.environ["TITLE"],os.environ["BODY"])
+          result=localize(
+              os.environ["SOURCE_ID"],os.environ["SOURCE_REVISION"],os.environ["TITLE"],os.environ["BODY"],
+              os.environ.get("LOCALIZED_TITLE"),os.environ.get("LOCALIZED_BODY"),
+              json.loads(os.environ.get("QA_ISSUES_JSON") or "[]"),
+              os.environ.get("CHANGE_REQUEST") or None,
+              int(os.environ.get("LOCALIZATION_REVISION") or "1")
+          )
           open("artifacts/russian-language-robot/draft.json","w").write(json.dumps(result,ensure_ascii=False,indent=2))
           PY
       - uses: actions/upload-artifact@v4
@@ -62,6 +95,8 @@ jobs:
         run: |
           if [ ! -f artifacts/russian-language-robot/draft.json ]; then
             echo "No report produced; skipping Control Center ingestion."
+          elif python3 -c "import json,sys; d=json.load(open('artifacts/russian-language-robot/draft.json')); sys.exit(0 if d.get('approvalState')=='NOT_REQUIRED' else 1)"; then
+            echo "No reviewable Russian localization exists; auto-archived in workflow history and not added to Needs Approval."
           elif [ -z "$CONTROL_CENTER_URL" ]; then
             echo "::warning::CONTROL_CENTER_URL not configured; the result will still reach Needs Approval next time the dashboard loads."
           else
