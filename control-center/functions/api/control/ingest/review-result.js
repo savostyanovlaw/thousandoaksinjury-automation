@@ -1,5 +1,5 @@
 import { loadRegistry } from '../../../../lib/registry.js';
-import { requireIngestToken } from '../../../../lib/auth.js';
+import { requireGithubActionsAuth } from '../../../../lib/github-oidc.js';
 import { ensureRunReviewApproval, ensureControlSchema } from '../../../../lib/approval-store.js';
 import { targetHash } from '../../../../lib/approvals.js';
 import { writeAudit } from '../../../../lib/audit.js';
@@ -10,8 +10,10 @@ import { assertExactFields, errorResponse, jsonResponse, parseJson } from '../..
 // Needs Approval state without depending on a human loading the dashboard
 // first (GET /api/control/state still reconciles the same way as a
 // harmless, idempotent fallback for any run that predates or misses this
-// call). Authenticated with a shared bearer-style token, never a browser
-// session, since the caller is a GitHub Actions job.
+// call). Authenticated with GitHub's own OIDC identity token, never a
+// browser session and never a shared secret: no credential is created,
+// stored, or synchronized on either side, and Cloudflare has nothing to
+// rebind after a Cloudflare-side configuration change.
 export async function ingestReviewResult({agents,db,body,now=()=>new Date().toISOString()}){
   assertExactFields(body,['agentId','runId','createdAt'],['agentId','runId']);
   const agent=agents.find(a=>a.id===body.agentId);
@@ -23,13 +25,18 @@ export async function ingestReviewResult({agents,db,body,now=()=>new Date().toIS
 
 export async function onRequestPost(context){
   try{
-    await requireIngestToken(context,context.env);
+    const claims=await requireGithubActionsAuth(context.request);
     const body=await parseJson(context.request);
+    // The OIDC token is scoped to the exact run that minted it (GitHub sets
+    // its run_id claim server-side). Requiring it to match the run id the
+    // caller claims to be ingesting means a token can only ever ingest the
+    // result of the run that requested it, not an arbitrary run id.
+    if(String(claims.run_id)!==String(body.runId)) throw new Error('Token run id does not match request run id');
     const agents=await loadRegistry();
     await ensureControlSchema(context.env.CONTROL_DB);
     const row=await ingestReviewResult({agents,db:context.env.CONTROL_DB,body});
     if(row){
-      await writeAudit(context.env.CONTROL_DB,{timestamp:new Date().toISOString(),actor:`agent:${body.agentId}`,agentId:body.agentId,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(body.runId),targetRevision:String(body.runId),autonomy:'YELLOW',result:'ingested'});
+      await writeAudit(context.env.CONTROL_DB,{timestamp:new Date().toISOString(),actor:`github-actions:${claims.workflow||body.agentId}`,agentId:body.agentId,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(body.runId),targetRevision:String(body.runId),autonomy:'YELLOW',result:'ingested'});
     }
     return jsonResponse({ok:true,created:!!row},201);
   }catch(error){ return errorResponse(error); }
