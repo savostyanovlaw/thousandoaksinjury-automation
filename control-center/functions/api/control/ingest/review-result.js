@@ -36,6 +36,21 @@ export async function onRequestPost(context){
     if(String(claims.run_id)!==String(body.runId)) throw new Error('Token run id does not match request run id');
     const agents=await loadRegistry();
     await ensureControlSchema(context.env.CONTROL_DB);
+    // Read the producing run before creating an approval. A successful HEALTHY
+    // report with zero findings and no proposed action belongs in Audit/History,
+    // not in the owner's Needs Approval queue.
+    const github=createGitHubAdapter({token:context.env.GITHUB_TOKEN});
+    const review=await github.getWorkflowRunReview(body.runId);
+    const rr=review?.reviewResult;
+    const findings=Array.isArray(rr?.findings)?rr.findings:[];
+    const findingCount=Number.isFinite(Number(rr?.findingCount))?Number(rr.findingCount):findings.length;
+    const status=String(rr?.status||'').toUpperCase();
+    const recommendation=String(rr?.recommendedAction||'').toUpperCase();
+    const noAction=(status==='HEALTHY' && findingCount===0 && (!recommendation || recommendation==='NO_ACTION' || recommendation==='AUTO_ARCHIVE'));
+    if(noAction){
+      await writeAudit(context.env.CONTROL_DB,{timestamp:new Date().toISOString(),actor:`github-actions:${claims.workflow||body.agentId}`,agentId:body.agentId,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(body.runId),targetRevision:String(body.runId),autonomy:'GREEN',result:'auto-archived-no-action'});
+      return jsonResponse({ok:true,created:false,autoArchived:true},201);
+    }
     const row=await ingestReviewResult({agents,db:context.env.CONTROL_DB,body});
     if(row){
       await writeAudit(context.env.CONTROL_DB,{timestamp:new Date().toISOString(),actor:`github-actions:${claims.workflow||body.agentId}`,agentId:body.agentId,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(body.runId),targetRevision:String(body.runId),autonomy:'YELLOW',result:'ingested'});
@@ -44,7 +59,6 @@ export async function onRequestPost(context){
       // is GREEN-eligible and, if so, execute it automatically -- see
       // lib/auto-remediate.js. Anything not fully green is left exactly as
       // before: a normal PENDING approval waiting for the owner.
-      const github=createGitHubAdapter({token:context.env.GITHUB_TOKEN});
       await maybeAutoRemediateGreenReport({approvalRow:row,db:context.env.CONTROL_DB,github});
     }
     return jsonResponse({ok:true,created:!!row},201);
