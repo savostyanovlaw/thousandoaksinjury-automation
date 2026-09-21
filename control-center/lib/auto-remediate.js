@@ -9,17 +9,25 @@ function actionableItems(review) {
   return findings.length ? findings : [];
 }
 
-// Called right after a NEW REVIEW_RESULT approval is created (push-ingest or
-// dashboard-load reconciliation -- never for a re-check of an
-// already-processed run, so this never re-fetches or re-decides for the
-// same run twice). If every actionable finding in the report is GREEN and
-// none of them are already in flight or have exhausted their bounded retry
-// budget, this approves the report itself, automatically, as the system --
-// exactly the same claim/dispatch/audit code path a human's Approve click
-// runs, just invoked without a human. Anything else (mixed report, no
-// findings, cooldown exceeded, already in flight) leaves the approval
-// PENDING for ordinary owner review; this function is a pure best-effort
-// accelerator, never a requirement for the approval to eventually resolve.
+// Called both right after a NEW REVIEW_RESULT approval is created
+// (push-ingest or dashboard-load reconciliation) and again, on every later
+// dashboard load, for any REVIEW_RESULT approval still PENDING (see
+// state.js) -- the first attempt can legitimately lose a race against the
+// producing workflow's own log finalization (its "Notify Control Center"
+// step calls us from inside its own still-running job), so a single
+// call-once contract is not enough to guarantee the loop ever closes. A
+// repeat call is always safe: `applyApprovalDecision` only ever succeeds
+// once per approval (its own status check enforces that), so re-attempting
+// a report that is not (yet) fully green, or one whose eligibility check
+// still fails, is a no-op rather than a duplicate action. If every
+// actionable finding in the report is GREEN and none of them are already in
+// flight or have exhausted their bounded retry budget, this approves the
+// report itself, automatically, as the system -- exactly the same
+// claim/dispatch/audit code path a human's Approve click runs, just invoked
+// without a human. Anything else (mixed report, no findings, cooldown
+// exceeded, already in flight) leaves the approval PENDING for ordinary
+// owner review; this function is a pure best-effort accelerator, never a
+// requirement for the approval to eventually resolve.
 export async function maybeAutoRemediateGreenReport({ approvalRow, db, github }) {
   if (!approvalRow) return { attempted: false };
   try {
