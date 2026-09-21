@@ -2,7 +2,7 @@ import { loadRegistry } from '../../../lib/registry.js';
 import { requireAuthorizedUser } from '../../../lib/auth.js';
 import { createGitHubAdapter } from '../../../lib/github.js';
 import { buildDashboardState } from '../../../lib/state.js';
-import { listPendingApprovals, ensureRunReviewApproval } from '../../../lib/approval-store.js';
+import { listPendingApprovals, ensureRunReviewApproval, ensureControlSchema } from '../../../lib/approval-store.js';
 import { targetHash } from '../../../lib/approvals.js';
 import { errorResponse, jsonResponse } from '../../../lib/http.js';
 import { listAuditEvents } from '../../../lib/audit.js';
@@ -56,6 +56,10 @@ export async function loadGitHubDiagnostics(github){
 export async function onRequestGet(context){
   try{
     await requireAuthorizedUser(context,context.env);
+    // Self-heal rather than fail closed: a dashboard load must not 500 just
+    // because schema.sql was never run by hand against this D1 database.
+    // CREATE TABLE IF NOT EXISTS is idempotent and cheap on every request.
+    await ensureControlSchema(context.env.CONTROL_DB);
     const agents=await loadRegistry();
     const github=createGitHubAdapter({token:context.env.GITHUB_TOKEN});
     const [optional,githubDiagnostics]=await Promise.all([

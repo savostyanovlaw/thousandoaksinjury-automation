@@ -1,7 +1,7 @@
 import { loadRegistry } from '../../../lib/registry.js';
 import { requireAuthorizedUser } from '../../../lib/auth.js';
 import { targetHash } from '../../../lib/approvals.js';
-import { insertApproval, listPendingApprovals } from '../../../lib/approval-store.js';
+import { insertApproval, listPendingApprovals, ensureControlSchema } from '../../../lib/approval-store.js';
 import { writeAudit } from '../../../lib/audit.js';
 import { assertExactFields, errorResponse, jsonResponse, parseJson, requireSameOrigin } from '../../../lib/http.js';
 
@@ -17,13 +17,17 @@ export async function createApprovalRequest({agents,body,idFactory=()=>crypto.ra
 }
 
 export async function onRequestGet(context){
-  try{ await requireAuthorizedUser(context,context.env); return jsonResponse({approvals:await listPendingApprovals(context.env.CONTROL_DB)}); }
-  catch(error){ return errorResponse(error); }
+  try{
+    await requireAuthorizedUser(context,context.env);
+    await ensureControlSchema(context.env.CONTROL_DB);
+    return jsonResponse({approvals:await listPendingApprovals(context.env.CONTROL_DB)});
+  }catch(error){ return errorResponse(error); }
 }
 
 export async function onRequestPost(context){
   try{
     const user=await requireAuthorizedUser(context,context.env); requireSameOrigin(context.request);
+    await ensureControlSchema(context.env.CONTROL_DB);
     const body=await parseJson(context.request);
     const agents=await loadRegistry();
     const row=await createApprovalRequest({agents,body});

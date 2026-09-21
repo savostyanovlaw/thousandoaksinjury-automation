@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: local-seo-robot
@@ -40,48 +41,24 @@ jobs:
             python -c "import base64,pathlib; print('SLC_REVIEW_JSON_B64='+base64.b64encode(pathlib.Path('artifacts/local-seo-robot/report.json').read_bytes()).decode())"
           fi
 
-      - name: TEMP diagnostic - verbose ingest probe (to be reverted)
-        if: always()
-        env:
-          CONTROL_CENTER_URL: ${{ vars.CONTROL_CENTER_URL }}
-          CONTROL_INGEST_TOKEN: ${{ secrets.CONTROL_INGEST_TOKEN }}
-        run: |
-          echo "CONTROL_CENTER_URL set: $([ -n "$CONTROL_CENTER_URL" ] && echo yes || echo no), length: ${#CONTROL_CENTER_URL}"
-          echo "CONTROL_INGEST_TOKEN set: $([ -n "$CONTROL_INGEST_TOKEN" ] && echo yes || echo no), length: ${#CONTROL_INGEST_TOKEN}"
-          echo "--- with configured secret ---"
-          curl -sS -i -X POST "$CONTROL_CENTER_URL/api/control/ingest/review-result" \
-            -H "X-Control-Ingest-Token: $CONTROL_INGEST_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{"agentId":"technical-seo-watchdog","runId":"diag-1"}' || true
-          echo ""
-          echo "--- with deliberately wrong token ---"
-          curl -sS -i -X POST "$CONTROL_CENTER_URL/api/control/ingest/review-result" \
-            -H "X-Control-Ingest-Token: definitely-wrong-token-for-diagnostics" \
-            -H "Content-Type: application/json" \
-            -d '{"agentId":"technical-seo-watchdog","runId":"diag-2"}' || true
-          echo ""
-          echo "--- with no token header ---"
-          curl -sS -i -X POST "$CONTROL_CENTER_URL/api/control/ingest/review-result" \
-            -H "Content-Type: application/json" \
-            -d '{"agentId":"technical-seo-watchdog","runId":"diag-3"}' || true
-          echo ""
-          echo "--- GET on control-center state (unauthenticated, expect 401 redirect-style JSON) ---"
-          curl -sS -i "$CONTROL_CENTER_URL/api/control/state" || true
-
       - name: Notify Control Center of new result
         if: always()
         env:
           CONTROL_CENTER_URL: ${{ vars.CONTROL_CENTER_URL }}
-          CONTROL_INGEST_TOKEN: ${{ secrets.CONTROL_INGEST_TOKEN }}
         run: |
           if [ ! -f artifacts/local-seo-robot/report.json ]; then
             echo "No report produced; skipping Control Center ingestion."
-          elif [ -z "$CONTROL_CENTER_URL" ] || [ -z "$CONTROL_INGEST_TOKEN" ]; then
-            echo "::warning::CONTROL_CENTER_URL/CONTROL_INGEST_TOKEN not configured; the result will still reach Needs Approval next time the dashboard loads."
+          elif [ -z "$CONTROL_CENTER_URL" ]; then
+            echo "::warning::CONTROL_CENTER_URL not configured; the result will still reach Needs Approval next time the dashboard loads."
           else
-            curl -sS -f -X POST "$CONTROL_CENTER_URL/api/control/ingest/review-result" \
-              -H "X-Control-Ingest-Token: $CONTROL_INGEST_TOKEN" \
-              -H "Content-Type: application/json" \
-              -d "{\"agentId\":\"local-seo-robot\",\"runId\":\"${GITHUB_RUN_ID}\"}" \
-              || echo "::warning::Control Center ingest call failed; dashboard-load reconciliation remains as fallback."
+            OIDC_TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=slc-ai-control-ingest" | python3 -c "import json,sys; print(json.load(sys.stdin).get('value',''))")
+            if [ -z "$OIDC_TOKEN" ]; then
+              echo "::warning::Could not obtain a GitHub OIDC token; dashboard-load reconciliation remains as fallback."
+            else
+              curl -sS -f -X POST "$CONTROL_CENTER_URL/api/control/ingest/review-result" \
+                -H "Authorization: Bearer $OIDC_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "{\"agentId\":\"local-seo-robot\",\"runId\":\"${GITHUB_RUN_ID}\"}" \
+                || echo "::warning::Control Center ingest call failed; dashboard-load reconciliation remains as fallback."
+            fi
           fi
