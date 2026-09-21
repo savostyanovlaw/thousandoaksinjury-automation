@@ -24,6 +24,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   draft:
@@ -65,4 +66,53 @@ jobs:
         run: |
           if [ -f artifacts/content-creator/draft.json ]; then
             python -c "import base64,pathlib; print('SLC_REVIEW_JSON_B64='+base64.b64encode(pathlib.Path('artifacts/content-creator/draft.json').read_bytes()).decode())"
+          fi
+
+      - name: Notify Control Center of new result
+        if: always()
+        env:
+          CONTROL_CENTER_URL: ${{ vars.CONTROL_CENTER_URL }}
+          CONTROL_INGEST_TOKEN: ${{ secrets.CONTROL_INGEST_TOKEN }}
+        run: |
+          if [ ! -f artifacts/content-creator/draft.json ]; then
+            echo "No report produced; skipping Control Center ingestion."
+          elif [ -z "$CONTROL_CENTER_URL" ] || [ -z "$CONTROL_INGEST_TOKEN" ]; then
+            echo "::warning::CONTROL_CENTER_URL/CONTROL_INGEST_TOKEN not configured; the result will still reach Needs Approval next time the dashboard loads."
+          else
+            curl -sS -f -X POST "$CONTROL_CENTER_URL/api/control/ingest/review-result" \
+              -H "X-Control-Ingest-Token: $CONTROL_INGEST_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"agentId\":\"content-creator\",\"runId\":\"${GITHUB_RUN_ID}\"}" \
+              || echo "::warning::Control Center ingest call failed; dashboard-load reconciliation remains as fallback."
+          fi
+
+      - name: Trigger Russian-language review draft from this real draft
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ ! -f artifacts/content-creator/draft.json ]; then
+            echo "No draft produced; skipping Russian-language handoff."
+          else
+            python3 - <<'PY'
+          import json, os, urllib.request
+          draft=json.load(open("artifacts/content-creator/draft.json"))
+          title=draft.get("title") or ""
+          body=(draft.get("draft") or "")[:9000]
+          if not title or not body:
+              print("Draft missing title/body; skipping Russian-language handoff.")
+              raise SystemExit(0)
+          req=urllib.request.Request(
+              f"https://api.github.com/repos/{os.environ['REPO']}/actions/workflows/russian-language-robot.yml/dispatches",
+              data=json.dumps({"ref":"main","inputs":{
+                  "source_id":f"content-creator:{os.environ.get('GITHUB_RUN_ID','')}",
+                  "source_revision":os.environ.get("GITHUB_SHA",""),
+                  "title":title,
+                  "body":body}}).encode(),
+              method="POST",
+              headers={"Authorization":f"Bearer {os.environ['GH_TOKEN']}","Accept":"application/vnd.github+json","Content-Type":"application/json"})
+          urllib.request.urlopen(req).read()
+          print(json.dumps({"dispatched":"russian-language-robot.yml","title":title}))
+          PY
           fi

@@ -42,11 +42,30 @@ jobs:
             python -c "import base64,pathlib; print('SLC_REVIEW_JSON_B64='+base64.b64encode(pathlib.Path('artifacts/opportunity-finder/report.json').read_bytes()).decode())"
           fi
 
+      - name: Notify Control Center of new result
+        if: always()
+        env:
+          CONTROL_CENTER_URL: ${{ vars.CONTROL_CENTER_URL }}
+          CONTROL_INGEST_TOKEN: ${{ secrets.CONTROL_INGEST_TOKEN }}
+        run: |
+          if [ ! -f artifacts/opportunity-finder/report.json ]; then
+            echo "No report produced; skipping Control Center ingestion."
+          elif [ -z "$CONTROL_CENTER_URL" ] || [ -z "$CONTROL_INGEST_TOKEN" ]; then
+            echo "::warning::CONTROL_CENTER_URL/CONTROL_INGEST_TOKEN not configured; the result will still reach Needs Approval next time the dashboard loads."
+          else
+            curl -sS -f -X POST "$CONTROL_CENTER_URL/api/control/ingest/review-result" \
+              -H "X-Control-Ingest-Token: $CONTROL_INGEST_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"agentId\":\"opportunity-finder\",\"runId\":\"${GITHUB_RUN_ID}\"}" \
+              || echo "::warning::Control Center ingest call failed; dashboard-load reconciliation remains as fallback."
+          fi
+
   handoff:
     needs: analyze
     if: ${{ needs.analyze.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: opportunity-finder-report
@@ -57,7 +76,9 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           python3 - <<'PY'
-          import json, os, urllib.request
+          import json, os, sys, urllib.request
+          sys.path.insert(0, os.getcwd())
+          from scripts.opportunity_finder import topic_and_city_for_url
           report=json.load(open("artifacts/opportunity-finder/report.json"))
           findings=report.get("findings") or []
           if not findings:
@@ -66,12 +87,17 @@ jobs:
           finding=findings[0]
           url=finding["url"]
           issue=finding["type"]
-          topic=f"{issue.replace('_',' ')} review"
+          # The finding's "type" is a technical SEO defect (h1_count,
+          # missing_title, ...), not a legal topic. Derive the real practice
+          # area/city the page covers so Content Creator drafts reviewable
+          # personal-injury content, and keep the technical trigger as
+          # separate context (opportunity_type/source_url) for the reviewer.
+          topic, city=topic_and_city_for_url(url)
           req=urllib.request.Request(
               f"https://api.github.com/repos/{os.environ['REPO']}/actions/workflows/content-creator.yml/dispatches",
-              data=json.dumps({"ref":"main","inputs":{"topic":topic,"city":"Thousand Oaks","source_url":url,"opportunity_type":issue}}).encode(),
+              data=json.dumps({"ref":"main","inputs":{"topic":topic,"city":city,"source_url":url,"opportunity_type":issue}}).encode(),
               method="POST",
               headers={"Authorization":f"Bearer {os.environ['GH_TOKEN']}","Accept":"application/vnd.github+json","Content-Type":"application/json"})
           urllib.request.urlopen(req).read()
-          print(json.dumps({"dispatched":"content-creator.yml","source_url":url,"opportunity_type":issue}))
+          print(json.dumps({"dispatched":"content-creator.yml","source_url":url,"opportunity_type":issue,"topic":topic,"city":city}))
           PY

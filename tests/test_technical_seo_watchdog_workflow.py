@@ -20,6 +20,17 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('reconcile_watchdog_issues.py', workflow)
         self.assertIn('if: always()', workflow)
 
+    def test_workflow_only_fails_on_missing_report_not_on_findings(self):
+        # A production SEO/content finding is the watchdog's normal, intended
+        # output (tracked via GitHub issues and the Control Center Review
+        # Queue). It must never turn the workflow run itself red, or fleet
+        # health monitoring (agent-orchestrator, the Control Center) cannot
+        # tell "the watchdog found something" apart from "the watchdog is
+        # broken."
+        workflow = pathlib.Path('.github/workflows/technical-seo-watchdog.yml').read_text(encoding='utf-8')
+        self.assertNotIn("steps.check.outcome == 'failure'", workflow)
+        self.assertIn('if [ ! -f artifacts/technical-seo-watchdog/report.json ]; then', workflow)
+
     def test_watchdog_runner_can_execute_as_script(self):
         result = subprocess.run(
             [sys.executable, 'scripts/technical_seo_watchdog_runner.py', '--help'],

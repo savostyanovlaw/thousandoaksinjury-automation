@@ -1,8 +1,31 @@
 name: Content Refresher
 on:
-  # Autonomous scheduling is intentionally paused until this agent consumes real
-  # site/opportunity inputs instead of production-cycle placeholder material.
+  # Event-driven: dispatched against a real existing page (source_id/revision)
+  # with a real, specific reason to refresh it. Never invoked with fabricated
+  # "production-cycle" placeholder material, so autonomous scheduling stays
+  # paused until a real caller supplies a real page.
   workflow_dispatch:
+    inputs:
+      source_id:
+        description: Identifier of the real existing page being refreshed
+        required: true
+        type: string
+      source_revision:
+        description: Revision of the real existing page (commit SHA or run id)
+        required: true
+        type: string
+      title:
+        description: Real existing page title
+        required: true
+        type: string
+      body:
+        description: Real existing page body content
+        required: true
+        type: string
+      material_change_reason:
+        description: Specific, real reason this page needs a refresh
+        required: true
+        type: string
   pull_request:
     paths: ['scripts/content_refresher.py','tests/test_content_refresher.py','.github/workflows/content-refresher.yml']
 permissions: {contents: read}
@@ -15,15 +38,42 @@ jobs:
         with: {python-version: '3.12'}
       - run: python -m unittest tests.test_content_refresher -v
       - name: Generate attorney-review refresh package
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SOURCE_ID: ${{ inputs.source_id }}
+          SOURCE_REVISION: ${{ inputs.source_revision }}
+          TITLE: ${{ inputs.title }}
+          BODY: ${{ inputs.body }}
+          MATERIAL_CHANGE_REASON: ${{ inputs.material_change_reason }}
         run: |
           mkdir -p artifacts/content-refresher
-          python - <<'PY'
-          import json
+          python3 - <<'PY'
+          import json, os
           from scripts.content_refresher import refresh
-          result=refresh("production-cycle","main","California Personal Injury Review Draft","Existing educational personal injury content.",["Production-cycle content freshness review"])
+          result=refresh(os.environ["SOURCE_ID"],os.environ["SOURCE_REVISION"],os.environ["TITLE"],os.environ["BODY"],[os.environ["MATERIAL_CHANGE_REASON"]])
           open("artifacts/content-refresher/draft.json","w").write(json.dumps(result,ensure_ascii=False,indent=2))
           PY
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
         with: {name: content-refresher-review-draft, path: artifacts/content-refresher/draft.json, retention-days: 30}
       - name: Expose result to owner Review Queue
+        if: github.event_name == 'workflow_dispatch'
         run: python -c "import base64,pathlib; print('SLC_REVIEW_JSON_B64='+base64.b64encode(pathlib.Path('artifacts/content-refresher/draft.json').read_bytes()).decode())"
+
+      - name: Notify Control Center of new result
+        if: always() && github.event_name == 'workflow_dispatch'
+        env:
+          CONTROL_CENTER_URL: ${{ vars.CONTROL_CENTER_URL }}
+          CONTROL_INGEST_TOKEN: ${{ secrets.CONTROL_INGEST_TOKEN }}
+        run: |
+          if [ ! -f artifacts/content-refresher/draft.json ]; then
+            echo "No report produced; skipping Control Center ingestion."
+          elif [ -z "$CONTROL_CENTER_URL" ] || [ -z "$CONTROL_INGEST_TOKEN" ]; then
+            echo "::warning::CONTROL_CENTER_URL/CONTROL_INGEST_TOKEN not configured; the result will still reach Needs Approval next time the dashboard loads."
+          else
+            curl -sS -f -X POST "$CONTROL_CENTER_URL/api/control/ingest/review-result" \
+              -H "X-Control-Ingest-Token: $CONTROL_INGEST_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"agentId\":\"content-refresher\",\"runId\":\"${GITHUB_RUN_ID}\"}" \
+              || echo "::warning::Control Center ingest call failed; dashboard-load reconciliation remains as fallback."
+          fi
