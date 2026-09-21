@@ -48,6 +48,62 @@ class VideoEngineTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             agent.build_video_package("dog bite", "California", "<script>alert(1)</script>")
 
+    def test_california_location_infers_california_wide_scope(self):
+        package = agent.build_video_package("dog bites", "California", "sched:1")
+        self.assertEqual(package["geographicScope"], "california_wide")
+
+    def test_a_local_city_location_infers_local_scope(self):
+        package = agent.build_video_package("dog bite", "Thousand Oaks", "sched:2")
+        self.assertEqual(package["geographicScope"], "local")
+
+    def test_a_named_regional_market_infers_regional_scope(self):
+        package = agent.build_video_package("rideshare accidents", "Los Angeles", "sched:3")
+        self.assertEqual(package["geographicScope"], "regional")
+
+    def test_an_explicit_scope_overrides_inference(self):
+        package = agent.build_video_package("dog bites", "California", "sched:4", geographic_scope="local")
+        self.assertEqual(package["geographicScope"], "local")
+
+    def test_title_does_not_duplicate_a_location_already_named_in_the_topic(self):
+        package = agent.build_video_package("California personal injury deadlines", "California", "sched:5")
+        self.assertEqual(package["title"].lower().count("california"), 1)
+
+    def test_title_names_the_location_when_not_already_in_the_topic(self):
+        package = agent.build_video_package("dog bite", "Thousand Oaks", "sched:6")
+        self.assertIn("Thousand Oaks", package["title"])
+
+    def test_rich_proposal_fields_are_carried_through_when_provided(self):
+        package = agent.build_video_package(
+            "dog bites",
+            "California",
+            "sched:7",
+            why_today="Test reason",
+            data_signal_used="Test signal",
+            target_audience="Test audience",
+            search_intent="Test intent",
+            primary_distribution="Multi-channel",
+            series="California Injury Claim Myths",
+            sources=["Video Engine proposal history"],
+            seo_rationale="Test rationale",
+            target_page_or_cluster="California personal injury content cluster",
+            expected_role="search acquisition",
+        )
+        self.assertEqual(package["whyToday"], "Test reason")
+        self.assertEqual(package["dataSignalUsed"], "Test signal")
+        self.assertEqual(package["targetAudience"], "Test audience")
+        self.assertEqual(package["searchIntent"], "Test intent")
+        self.assertEqual(package["primaryDistribution"], "Multi-channel")
+        self.assertEqual(package["series"], "California Injury Claim Myths")
+        self.assertEqual(package["sources"], ["Video Engine proposal history"])
+        self.assertEqual(package["seoRationale"], "Test rationale")
+        self.assertEqual(package["targetPageOrCluster"], "California personal injury content cluster")
+        self.assertEqual(package["expectedRole"], "search acquisition")
+        self.assertIn("attorney review", package["legalBarComplianceRisk"].lower())
+
+    def test_cta_never_promises_a_specific_outcome(self):
+        package = agent.build_video_package("dog bites", "California", "sched:8")
+        self.assertNotIn("guarantee", package["cta"].lower())
+
 
 if __name__ == "__main__":
     unittest.main()

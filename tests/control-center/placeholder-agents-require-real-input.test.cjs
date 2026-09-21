@@ -22,7 +22,14 @@ test('video-engine no longer invokes build_video_package() with a fabricated pla
   const y=fs.readFileSync('.github/workflows/video-engine.yml','utf8');
   assert.doesNotMatch(y,/build_video_package\("production-cycle"/);
   assert.match(y,/inputs\.topic/);
-  assert.match(y,/required: true/);
+  // topic/location are now optional inputs (an empty dispatch, or the daily
+  // schedule, runs the real data-driven selector instead -- see
+  // video_topic_selector.py) rather than required ones, but no path may
+  // silently fall back to a fabricated placeholder string: the explicit-
+  // input branch only calls build_video_package when a real topic was
+  // actually supplied, and every other path defers to the real selector.
+  assert.match(y,/video_engine_daily\.py/);
+  assert.match(y,/inputs\.topic != ''/);
 });
 
 test('content-creator hands its real generated draft to the Russian-language robot',()=>{
