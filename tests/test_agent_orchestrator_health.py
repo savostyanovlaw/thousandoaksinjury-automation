@@ -75,16 +75,16 @@ class EvaluateFleetHealthTests(unittest.TestCase):
 
     def test_event_driven_agent_that_ran_long_ago_is_not_stale(self):
         runs = self._all_scheduled_healthy_run()
-        runs.append(make_run("Video Engine", hours_ago=100000))
+        runs.append(make_run("Content Refresher", hours_ago=100000))
         report = evaluate_fleet_health(runs)
-        self.assertFalse(any(f["findingType"] == "agent_stale" and "Video Engine" in f["title"] for f in report["findings"]))
+        self.assertFalse(any(f["findingType"] == "agent_stale" and "Content Refresher" in f["title"] for f in report["findings"]))
 
     def test_failed_run_is_a_finding_even_for_an_event_driven_agent(self):
         runs = self._all_scheduled_healthy_run()
-        runs.append(make_run("Video Engine", conclusion="failure"))
+        runs.append(make_run("Content Refresher", conclusion="failure"))
         report = evaluate_fleet_health(runs)
         self.assertFalse(report["healthy"])
-        self.assertTrue(any(f["findingType"] == "agent_failed" and "Video Engine" in f["title"] for f in report["findings"]))
+        self.assertTrue(any(f["findingType"] == "agent_failed" and "Content Refresher" in f["title"] for f in report["findings"]))
 
 
 class DetectHandoffGapsTests(unittest.TestCase):

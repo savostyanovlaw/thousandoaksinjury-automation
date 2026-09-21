@@ -33,7 +33,7 @@ EXPECTED_AGENTS = {
     "Content Creator": {"trigger": EVENT_DRIVEN, "workflow": "content-creator.yml"},
     "Content Refresher": {"trigger": EVENT_DRIVEN, "workflow": "content-refresher.yml"},
     "Russian Language Robot": {"trigger": EVENT_DRIVEN, "workflow": "russian-language-robot.yml"},
-    "Video Engine": {"trigger": EVENT_DRIVEN, "workflow": "video-engine.yml"},
+    "Video Engine": {"trigger": SCHEDULED, "max_hours": 36, "workflow": "video-engine.yml"},
 }
 
 _QUALIFYING_EVENTS = ("schedule", "push", "workflow_dispatch")

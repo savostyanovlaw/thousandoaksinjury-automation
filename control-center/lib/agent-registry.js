@@ -89,8 +89,8 @@ export const AGENTS = [
   },
   {
     "id": "video-engine",
-    "trigger": "event-driven",
-    "cadenceHours": 120,
+    "trigger": "scheduled",
+    "cadenceHours": 36,
     "name": "Video Engine",
     "description": "Builds video content workflows.",
     "deployed": true,
