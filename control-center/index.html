@@ -11,7 +11,7 @@
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand"><span class="brand-mark">SL</span><div><strong>AI Control Center</strong><small>Savostyanov Law</small></div></div>
-      <nav aria-label="Control Center"><a class="active" href="#overview">Overview</a><a href="#agents">Agents</a><a href="#approvals">Approvals</a><a href="#attention">Needs Attention</a><a href="#activity">Activity</a></nav>
+      <nav aria-label="Control Center"><a class="active" href="#overview">Overview</a><a href="#agents">Agents</a><a href="#approvals">Approvals</a><a href="#self-healing">Self-Healing</a><a href="#attention">Needs Attention</a><a href="#activity">Activity</a></nav>
       <div class="sidebar-foot"><span class="dot healthy"></span><span id="connection-label">Private control plane</span></div>
     </aside>
     <main>
@@ -22,6 +22,7 @@
       </section>
       <section id="approvals" class="panel"><div class="section-head"><div><p class="eyebrow">OWNER DECISIONS</p><h2>Needs Your Approval</h2></div><span id="approval-count" class="count-badge">0</span></div><div id="approval-list" class="empty-state">No actions are waiting for approval.</div></section>
       <section id="agents" class="panel"><div class="section-head"><div><p class="eyebrow">AUTOMATION FLEET</p><h2>Agents</h2></div><span class="muted">Safe actions execute here. Production-impacting actions require approval.</span></div><div id="agent-grid" class="agent-grid" aria-live="polite"></div></section>
+      <section id="self-healing" class="panel"><div class="section-head"><div><p class="eyebrow">CLOSED-LOOP REMEDIATION</p><h2>Self-Healing Activity</h2></div><span id="remediation-count" class="count-badge">0</span></div><div id="remediation-list" class="feed"><div class="empty-state">No autonomous remediation activity yet.</div></div></section>
       <div class="two-col">
         <section id="attention" class="panel"><div class="section-head"><div><p class="eyebrow">ACTIONABLE ONLY</p><h2>Needs Attention</h2></div></div><div id="attention-list" class="feed"><div class="empty-state">Loading…</div></div></section>
         <section id="activity" class="panel"><div class="section-head"><div><p class="eyebrow">NORMALIZED HISTORY</p><h2>Activity</h2></div></div><div id="activity-list" class="feed"><div class="empty-state">Loading…</div></div></section>
