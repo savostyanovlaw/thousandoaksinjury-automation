@@ -2,25 +2,28 @@ import { loadRegistry } from '../../../lib/registry.js';
 import { requireAuthorizedUser } from '../../../lib/auth.js';
 import { createGitHubAdapter } from '../../../lib/github.js';
 import { buildDashboardState } from '../../../lib/state.js';
-import { listPendingApprovals, ensureRunReviewApproval, ensureControlSchema } from '../../../lib/approval-store.js';
+import { listPendingApprovals, listStuckApprovals, ensureRunReviewApproval, ensureControlSchema } from '../../../lib/approval-store.js';
 import { targetHash } from '../../../lib/approvals.js';
 import { errorResponse, jsonResponse } from '../../../lib/http.js';
 import { listAuditEvents } from '../../../lib/audit.js';
 import { listRemediationJobs } from '../../../lib/remediation-store.js';
 
-export async function loadOptionalControlState({loadApprovals,loadAudit,loadRemediation=async()=>[]}){
+export async function loadOptionalControlState({loadApprovals,loadAudit,loadRemediation=async()=>[],loadStuck=async()=>[]}){
   const degradedSources=[];
-  const [approvalsResult,auditResult,remediationResult]=await Promise.allSettled([loadApprovals(),loadAudit(),loadRemediation()]);
+  const [approvalsResult,auditResult,remediationResult,stuckResult]=await Promise.allSettled([loadApprovals(),loadAudit(),loadRemediation(),loadStuck()]);
   let pendingApprovals=[];
   let auditEvents=[];
   let remediationJobs=[];
+  let stuckApprovals=[];
   if(approvalsResult.status==='fulfilled') pendingApprovals=approvalsResult.value;
   else degradedSources.push('approvals');
   if(auditResult.status==='fulfilled') auditEvents=auditResult.value;
   else degradedSources.push('audit');
   if(remediationResult.status==='fulfilled') remediationJobs=remediationResult.value;
   else degradedSources.push('remediation');
-  return {pendingApprovals,auditEvents,remediationJobs,degraded:degradedSources.length>0,degradedSources};
+  if(stuckResult.status==='fulfilled') stuckApprovals=stuckResult.value;
+  else degradedSources.push('stuckApprovals');
+  return {pendingApprovals,auditEvents,remediationJobs,stuckApprovals,degraded:degradedSources.length>0,degradedSources};
 }
 
 function safeMessage(value){
@@ -66,7 +69,8 @@ export async function onRequestGet(context){
       loadOptionalControlState({
         loadApprovals:()=>listPendingApprovals(context.env.CONTROL_DB),
         loadAudit:()=>listAuditEvents(context.env.CONTROL_DB),
-        loadRemediation:()=>listRemediationJobs(context.env.CONTROL_DB)
+        loadRemediation:()=>listRemediationJobs(context.env.CONTROL_DB),
+        loadStuck:()=>listStuckApprovals(context.env.CONTROL_DB)
       }),
       loadGitHubDiagnostics(github)
     ]);
@@ -85,6 +89,14 @@ export async function onRequestGet(context){
     const state=await buildDashboardState({agents,github,pendingApprovals:reconciledApprovals,auditEvents:optional.auditEvents});
     state.githubDiagnostics=githubDiagnostics;
     state.remediationJobs=optional.remediationJobs;
+    // An approval stuck APPROVED-but-unconsumed means its execution failed
+    // after being claimed (see executeApprovalDecision) -- a real
+    // operational problem the owner should see without opening GitHub
+    // Actions or querying the database directly.
+    state.stuckApprovals=optional.stuckApprovals;
+    if(optional.stuckApprovals.length){
+      state.attention=[...state.attention,...optional.stuckApprovals.map(a=>({agentId:a.agentId,title:`${a.agentId}: approved action did not finish executing`,issues:[{number:0,title:`Stuck since ${a.decidedAt}`,url:null}]}))];
+    }
     if(optional.degraded){
       state.stale=true;
       state.degradedSources=optional.degradedSources;

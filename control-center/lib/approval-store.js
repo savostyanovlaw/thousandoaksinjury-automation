@@ -44,6 +44,22 @@ export async function listPendingApprovals(db){
   const {results=[]}=await db.prepare("SELECT id, agent_id as agentId, action, target_type as targetType, target_id as targetId, target_revision as targetRevision, payload_hash as payloadHash, status, created_at as createdAt FROM approvals WHERE status = 'PENDING' ORDER BY created_at DESC").all();
   return results;
 }
+// A MERGE_PR approval that was claimed APPROVED but never reached
+// consumed_at is a real, observable "stuck" operational state: the
+// github.mergePull call failed after the claim already succeeded (see
+// executeApprovalDecision's RED branch), so the decision happened but
+// execution did not finish. This check is scoped to MERGE_PR specifically
+// -- REVIEW_RESULT approvals never set consumed_at at all, by design (they
+// route to remediation jobs, whose own status is the real completion
+// signal), so including them here would flag every successful review as
+// "stuck". A short grace period (thresholdMinutes) avoids flagging an
+// approval that is still legitimately mid-execution.
+export async function listStuckApprovals(db,thresholdMinutes=15){
+  if(!db?.prepare) return [];
+  const cutoff=new Date(Date.now()-thresholdMinutes*60000).toISOString();
+  const {results=[]}=await db.prepare("SELECT id, agent_id as agentId, action, target_type as targetType, target_id as targetId, target_revision as targetRevision, status, created_at as createdAt, decided_at as decidedAt, decided_by as decidedBy FROM approvals WHERE status = 'APPROVED' AND action = 'MERGE_PR' AND consumed_at IS NULL AND decided_at < ? ORDER BY decided_at ASC").bind(cutoff).all();
+  return results;
+}
 export async function ensureRunReviewApproval(db,row){
   if(!db?.prepare) throw new Error('Approval storage unavailable');
   const existing=await db.prepare("SELECT id FROM approvals WHERE agent_id = ? AND action = 'REVIEW_RESULT' AND target_type = 'workflow_run' AND target_id = ? LIMIT 1").bind(row.agentId,String(row.targetId)).first();
