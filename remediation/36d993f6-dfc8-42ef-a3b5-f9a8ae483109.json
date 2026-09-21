@@ -1,0 +1,17 @@
+{
+  "jobId": "36d993f6-dfc8-42ef-a3b5-f9a8ae483109",
+  "sourceAgentId": "technical-seo-watchdog",
+  "sourceRunId": "35569276150",
+  "findingType": "e2e_fixture_marker",
+  "summary": "Safe synthetic GREEN finding for the self-healing closed-loop E2E fixture. Touches only a repository-internal marker file (remediation/e2e-fixture-marker.txt); it can never reach production content.",
+  "recommendedAction": "Automatic remediation will write and verify this marker with no owner action.",
+  "autonomy": "GREEN",
+  "executionPolicy": {
+    "branchOnly": true,
+    "testsRequired": true,
+    "pullRequestRequired": true,
+    "mergeAllowed": true,
+    "deployAllowed": false,
+    "publishAllowed": false
+  }
+}
