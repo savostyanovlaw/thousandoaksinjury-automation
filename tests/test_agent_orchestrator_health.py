@@ -1,8 +1,8 @@
 import pathlib
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from scripts.agent_orchestrator_health import EXPECTED_AGENTS, SCHEDULED, EVENT_DRIVEN, evaluate_fleet_health
+from scripts.agent_orchestrator_health import EXPECTED_AGENTS, SCHEDULED, EVENT_DRIVEN, evaluate_fleet_health, detect_handoff_gaps, HANDOFF_WINDOW_MINUTES
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
@@ -85,6 +85,54 @@ class EvaluateFleetHealthTests(unittest.TestCase):
         report = evaluate_fleet_health(runs)
         self.assertFalse(report["healthy"])
         self.assertTrue(any(f["findingType"] == "agent_failed" and "Video Engine" in f["title"] for f in report["findings"]))
+
+
+class DetectHandoffGapsTests(unittest.TestCase):
+    def _upstream_run(self, minutes_ago):
+        return make_run("Content Creator", status="completed", conclusion="success", hours_ago=minutes_ago / 60, run_number=1)
+
+    def test_missing_downstream_dispatch_after_window_elapses_is_a_finding(self):
+        runs = [self._upstream_run(minutes_ago=HANDOFF_WINDOW_MINUTES + 5)]
+        findings = detect_handoff_gaps(runs)
+        titles = " ".join(f["title"] for f in findings)
+        self.assertIn("Russian Language Robot", titles)
+        self.assertIn("Video Engine", titles)
+
+    def test_downstream_dispatch_within_window_is_not_a_finding(self):
+        runs = [
+            self._upstream_run(minutes_ago=HANDOFF_WINDOW_MINUTES + 5),
+            make_run("Russian Language Robot", status="completed", conclusion="success", hours_ago=(HANDOFF_WINDOW_MINUTES - 2) / 60),
+            make_run("Video Engine", status="completed", conclusion="success", hours_ago=(HANDOFF_WINDOW_MINUTES - 1) / 60),
+        ]
+        findings = detect_handoff_gaps(runs)
+        self.assertEqual(findings, [])
+
+    def test_a_downstream_run_that_failed_after_dispatch_is_not_reported_here_as_missing(self):
+        # A dispatched-but-failed downstream run is a real problem, but it
+        # is caught by the ordinary per-agent agent_failed check, not
+        # double-reported here as a missing handoff.
+        runs = [
+            self._upstream_run(minutes_ago=HANDOFF_WINDOW_MINUTES + 5),
+            make_run("Russian Language Robot", status="completed", conclusion="failure", hours_ago=(HANDOFF_WINDOW_MINUTES - 2) / 60),
+            make_run("Video Engine", status="completed", conclusion="success", hours_ago=(HANDOFF_WINDOW_MINUTES - 1) / 60),
+        ]
+        findings = detect_handoff_gaps(runs)
+        self.assertEqual(findings, [])
+
+    def test_too_soon_after_upstream_success_is_not_yet_a_finding(self):
+        runs = [self._upstream_run(minutes_ago=2)]
+        findings = detect_handoff_gaps(runs)
+        self.assertEqual(findings, [])
+
+    def test_no_recent_successful_upstream_run_produces_no_findings(self):
+        findings = detect_handoff_gaps([])
+        self.assertEqual(findings, [])
+
+    def test_evaluate_fleet_health_surfaces_handoff_gaps_too(self):
+        runs = [self._upstream_run(minutes_ago=HANDOFF_WINDOW_MINUTES + 5)]
+        report = evaluate_fleet_health(runs)
+        self.assertFalse(report["healthy"])
+        self.assertTrue(any(f["findingType"] == "handoff_missing" for f in report["findings"]))
 
 
 if __name__ == "__main__":
