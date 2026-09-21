@@ -36,6 +36,25 @@ class WatchdogCoreTests(unittest.TestCase):
         self.assertTrue(result.has_tel)
         self.assertTrue(result.has_mailto)
 
+    def test_html_extracts_title_description_and_internal_links(self):
+        # A full-site crawl (duplicate-title/description detection and
+        # broken-internal-link checking in run_checks()) reads
+        # info.title / info.meta_description / info.internal_links. These
+        # were referenced by run_checks() but never populated by
+        # inspect_html(), which crashed the watchdog with an AttributeError
+        # on every real production crawl.
+        html = (
+            "<html><head><title>Thousand Oaks Personal Injury Attorney</title>"
+            "<meta name='description' content='Call for a free case review.'>"
+            "</head><body><a href='/dog-bite-lawyer/'>Dog Bite</a>"
+            "<a href='https://example.com/other'>External</a></body></html>"
+        )
+        result = inspect_html(html)
+        self.assertEqual(result.title, "Thousand Oaks Personal Injury Attorney")
+        self.assertEqual(result.meta_description, "Call for a free case review.")
+        self.assertIn("/dog-bite-lawyer/", result.internal_links)
+        self.assertIn("https://example.com/other", result.internal_links)
+
     def test_html_accepts_cloudflare_protected_email_link(self):
         html = """<html><body><a href='/cdn-cgi/l/email-protection' class='__cf_email__' data-cfemail='001122'>attorney@example.com</a></body></html>"""
         result = inspect_html(html)
