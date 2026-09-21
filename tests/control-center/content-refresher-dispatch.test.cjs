@@ -64,3 +64,28 @@ test('a technical-seo-fixer job still dispatches remediation-preparer.yml unchan
   await github.dispatchRemediation({id:'job2',sourceAgentId:'technical-seo-watchdog',sourceRunId:'999',remediationAgentId:'technical-seo-fixer',findingType:'robots',summary:'x',recommendedAction:'y',rawFinding:{}});
   assert.match(dispatchedUrl,/remediation-preparer\.yml\/dispatches$/);
 });
+
+test('dispatchRemediation forwards the job autonomy to remediation-preparer.yml', async()=>{
+  const {createGitHubAdapter}=await githubModule();
+  let dispatchedBody=null;
+  const fetchImpl=async(url,opts)=>{ dispatchedBody=JSON.parse(opts.body); return new Response('{}',{status:200}); };
+  const github=createGitHubAdapter({token:'ghp_test',fetchImpl});
+  await github.dispatchRemediation({id:'job3',sourceAgentId:'technical-seo-watchdog',sourceRunId:'999',remediationAgentId:'technical-seo-fixer',findingType:'robots-sitemap',summary:'x',recommendedAction:'y',autonomy:'GREEN',rawFinding:{}});
+  assert.equal(dispatchedBody.inputs.autonomy,'GREEN');
+});
+
+test('dispatchRemediation forwards the E2E fixture marker value and force-failure switch only for e2e_fixture_marker jobs', async()=>{
+  const {createGitHubAdapter}=await githubModule();
+  let dispatchedBody=null;
+  const fetchImpl=async(url,opts)=>{ dispatchedBody=JSON.parse(opts.body); return new Response('{}',{status:200}); };
+  const github=createGitHubAdapter({token:'ghp_test',fetchImpl});
+  await github.dispatchRemediation({id:'job4',sourceAgentId:'technical-seo-watchdog',sourceRunId:'999',remediationAgentId:'technical-seo-fixer',findingType:'e2e_fixture_marker',summary:'x',recommendedAction:'y',autonomy:'GREEN',rawFinding:{fixtureMarkerValue:'marker-abc',fixtureForceVerificationFailure:true}});
+  assert.equal(dispatchedBody.inputs.fixture_marker_value,'marker-abc');
+  assert.equal(dispatchedBody.inputs.fixture_force_verification_failure,'true');
+
+  let dispatchedBody2=null;
+  const fetchImpl2=async(url,opts)=>{ dispatchedBody2=JSON.parse(opts.body); return new Response('{}',{status:200}); };
+  const github2=createGitHubAdapter({token:'ghp_test',fetchImpl:fetchImpl2});
+  await github2.dispatchRemediation({id:'job5',sourceAgentId:'technical-seo-watchdog',sourceRunId:'999',remediationAgentId:'technical-seo-fixer',findingType:'robots-sitemap',summary:'x',recommendedAction:'y',autonomy:'GREEN',rawFinding:{}});
+  assert.equal(dispatchedBody2.inputs.fixture_marker_value,undefined,'a real finding must never carry fixture-only inputs');
+});

@@ -6,15 +6,31 @@ import { listPendingApprovals, listStuckApprovals, ensureRunReviewApproval, ensu
 import { targetHash } from '../../../lib/approvals.js';
 import { errorResponse, jsonResponse } from '../../../lib/http.js';
 import { listAuditEvents } from '../../../lib/audit.js';
-import { listRemediationJobs } from '../../../lib/remediation-store.js';
+import { listRemediationJobs, listStuckRemediationJobs } from '../../../lib/remediation-store.js';
+import { maybeAutoRemediateGreenReport } from '../../../lib/auto-remediate.js';
 
-export async function loadOptionalControlState({loadApprovals,loadAudit,loadRemediation=async()=>[],loadStuck=async()=>[]}){
+// A single, owner-facing label per remediation job status -- this is the
+// self-healing loop's visible outcome, distinct from (and shown alongside)
+// the agent-level Healthy/Running/Waiting states in buildDashboardState.
+// Never a second dashboard: this only adds a field to data the Control
+// Center already renders as a list.
+export function remediationOwnerLabel(job){
+  if(job.status==='VERIFIED') return 'Automatically Fixed';
+  if(job.status==='ROLLED_BACK' || job.status==='FAILED' || job.status==='ESCALATED') return 'Failed - Needs Attention';
+  if(job.status==='MERGED') return 'Recovery In Progress';
+  if(job.autonomy==='GREEN' && (job.status==='QUEUED' || job.status==='DISPATCHED')) return 'Recovery In Progress';
+  if(job.status==='BLOCKED') return 'Needs Attention';
+  return 'Prepared - Awaiting Review';
+}
+
+export async function loadOptionalControlState({loadApprovals,loadAudit,loadRemediation=async()=>[],loadStuck=async()=>[],loadStuckRemediation=async()=>[]}){
   const degradedSources=[];
-  const [approvalsResult,auditResult,remediationResult,stuckResult]=await Promise.allSettled([loadApprovals(),loadAudit(),loadRemediation(),loadStuck()]);
+  const [approvalsResult,auditResult,remediationResult,stuckResult,stuckRemediationResult]=await Promise.allSettled([loadApprovals(),loadAudit(),loadRemediation(),loadStuck(),loadStuckRemediation()]);
   let pendingApprovals=[];
   let auditEvents=[];
   let remediationJobs=[];
   let stuckApprovals=[];
+  let stuckRemediationJobs=[];
   if(approvalsResult.status==='fulfilled') pendingApprovals=approvalsResult.value;
   else degradedSources.push('approvals');
   if(auditResult.status==='fulfilled') auditEvents=auditResult.value;
@@ -23,7 +39,9 @@ export async function loadOptionalControlState({loadApprovals,loadAudit,loadReme
   else degradedSources.push('remediation');
   if(stuckResult.status==='fulfilled') stuckApprovals=stuckResult.value;
   else degradedSources.push('stuckApprovals');
-  return {pendingApprovals,auditEvents,remediationJobs,stuckApprovals,degraded:degradedSources.length>0,degradedSources};
+  if(stuckRemediationResult.status==='fulfilled') stuckRemediationJobs=stuckRemediationResult.value;
+  else degradedSources.push('stuckRemediationJobs');
+  return {pendingApprovals,auditEvents,remediationJobs,stuckApprovals,stuckRemediationJobs,degraded:degradedSources.length>0,degradedSources};
 }
 
 function safeMessage(value){
@@ -70,7 +88,8 @@ export async function onRequestGet(context){
         loadApprovals:()=>listPendingApprovals(context.env.CONTROL_DB),
         loadAudit:()=>listAuditEvents(context.env.CONTROL_DB),
         loadRemediation:()=>listRemediationJobs(context.env.CONTROL_DB),
-        loadStuck:()=>listStuckApprovals(context.env.CONTROL_DB)
+        loadStuck:()=>listStuckApprovals(context.env.CONTROL_DB),
+        loadStuckRemediation:()=>listStuckRemediationJobs(context.env.CONTROL_DB)
       }),
       loadGitHubDiagnostics(github)
     ]);
@@ -82,13 +101,22 @@ export async function onRequestGet(context){
       const run=wf?.lastRun;
       if(wf?.lastSuccess && run?.id){
         const payload={agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id)};
-        await ensureRunReviewApproval(context.env.CONTROL_DB,{...payload,id:crypto.randomUUID(),payloadHash:await targetHash(payload),status:'PENDING',createdAt:run.createdAt||new Date().toISOString()});
+        const row=await ensureRunReviewApproval(context.env.CONTROL_DB,{...payload,id:crypto.randomUUID(),payloadHash:await targetHash(payload),status:'PENDING',createdAt:run.createdAt||new Date().toISOString()});
+        // Only for a genuinely new approval (never a dashboard load
+        // re-reconciling a run already processed) -- see
+        // lib/auto-remediate.js for what "fully green" means here.
+        if(row) await maybeAutoRemediateGreenReport({approvalRow:row,db:context.env.CONTROL_DB,github});
       }
     }
     const reconciledApprovals=await listPendingApprovals(context.env.CONTROL_DB);
     const state=await buildDashboardState({agents,github,pendingApprovals:reconciledApprovals,auditEvents:optional.auditEvents});
     state.githubDiagnostics=githubDiagnostics;
-    state.remediationJobs=optional.remediationJobs;
+    // Each remediation job carries a single owner-facing label
+    // (Automatically Fixed / Recovery In Progress / Failed - Needs
+    // Attention / Prepared - Awaiting Review / Needs Attention) so the
+    // existing Control Center can show the self-healing loop's outcome
+    // without a second dashboard or a developer-facing status string.
+    state.remediationJobs=optional.remediationJobs.map(job=>({...job,ownerLabel:remediationOwnerLabel(job)}));
     // An approval stuck APPROVED-but-unconsumed means its execution failed
     // after being claimed (see executeApprovalDecision) -- a real
     // operational problem the owner should see without opening GitHub
@@ -96,6 +124,13 @@ export async function onRequestGet(context){
     state.stuckApprovals=optional.stuckApprovals;
     if(optional.stuckApprovals.length){
       state.attention=[...state.attention,...optional.stuckApprovals.map(a=>({agentId:a.agentId,title:`${a.agentId}: approved action did not finish executing`,issues:[{number:0,title:`Stuck since ${a.decidedAt}`,url:null}]}))];
+    }
+    // A remediation job left MERGED/DISPATCHED past a grace period means
+    // remediation-preparer.yml never reported its real outcome back (a
+    // crashed or lost runner) -- a real problem, not a silent gap.
+    state.stuckRemediationJobs=optional.stuckRemediationJobs;
+    if(optional.stuckRemediationJobs.length){
+      state.attention=[...state.attention,...optional.stuckRemediationJobs.map(j=>({agentId:j.sourceAgentId,title:`${j.sourceAgentId}: automatic remediation for ${j.findingType} did not report a final result`,issues:[{number:0,title:`Stuck in ${j.status} since ${j.updatedAt}`,url:null}]}))];
     }
     if(optional.degraded){
       state.stale=true;

@@ -3,6 +3,8 @@ import { requireGithubActionsAuth } from '../../../../lib/github-oidc.js';
 import { ensureRunReviewApproval, ensureControlSchema } from '../../../../lib/approval-store.js';
 import { targetHash } from '../../../../lib/approvals.js';
 import { writeAudit } from '../../../../lib/audit.js';
+import { createGitHubAdapter } from '../../../../lib/github.js';
+import { maybeAutoRemediateGreenReport } from '../../../../lib/auto-remediate.js';
 import { assertExactFields, errorResponse, jsonResponse, parseJson } from '../../../../lib/http.js';
 
 // Push-based ingestion: a producing GitHub Actions workflow calls this the
@@ -37,6 +39,13 @@ export async function onRequestPost(context){
     const row=await ingestReviewResult({agents,db:context.env.CONTROL_DB,body});
     if(row){
       await writeAudit(context.env.CONTROL_DB,{timestamp:new Date().toISOString(),actor:`github-actions:${claims.workflow||body.agentId}`,agentId:body.agentId,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(body.runId),targetRevision:String(body.runId),autonomy:'YELLOW',result:'ingested'});
+      // A newly-created approval (never a re-ingest of a run already
+      // processed) is the one moment to check whether every finding in it
+      // is GREEN-eligible and, if so, execute it automatically -- see
+      // lib/auto-remediate.js. Anything not fully green is left exactly as
+      // before: a normal PENDING approval waiting for the owner.
+      const github=createGitHubAdapter({token:context.env.GITHUB_TOKEN});
+      await maybeAutoRemediateGreenReport({approvalRow:row,db:context.env.CONTROL_DB,github});
     }
     return jsonResponse({ok:true,created:!!row},201);
   }catch(error){ return errorResponse(error); }

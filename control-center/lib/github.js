@@ -134,7 +134,16 @@ ${x.body||''}`.toLowerCase().includes(String(marker).toLowerCase()))
         return {ok:true,workflow};
       }
       const workflow='remediation-preparer.yml';
-      const inputs={job_id:String(job.id),source_agent_id:String(job.sourceAgentId),source_run_id:String(job.sourceRunId),finding_type:String(job.findingType),summary:String(job.summary).slice(0,500),recommended_action:String(job.recommendedAction).slice(0,500)};
+      const raw=job.rawFinding||{};
+      const inputs={job_id:String(job.id),source_agent_id:String(job.sourceAgentId),source_run_id:String(job.sourceRunId),finding_type:String(job.findingType),summary:String(job.summary).slice(0,500),recommended_action:String(job.recommendedAction).slice(0,500),autonomy:String(job.autonomy||'YELLOW')};
+      // The gated E2E fixture's own inputs: a real repository-internal
+      // marker file value to write, and an optional switch to deliberately
+      // fail post-merge verification so the bounded retry/rollback path can
+      // be proven on demand. Never present for a real finding.
+      if(String(job.findingType).toLowerCase()==='e2e_fixture_marker'){
+        inputs.fixture_marker_value=String(raw.fixtureMarkerValue||raw.fixture_marker_value||job.id);
+        inputs.fixture_force_verification_failure=String(raw.fixtureForceVerificationFailure||raw.fixture_force_verification_failure||false)==='true'?'true':'false';
+      }
       await json(`https://api.github.com/repos/${REPO}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs})});
       return {ok:true,workflow};
     },
