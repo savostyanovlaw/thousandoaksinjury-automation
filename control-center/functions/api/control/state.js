@@ -100,12 +100,18 @@ export async function onRequestGet(context){
       const wf=await github.getWorkflowState(agent);
       const run=wf?.lastRun;
       if(wf?.lastSuccess && run?.id){
-        const payload={agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id)};
-        const row=await ensureRunReviewApproval(context.env.CONTROL_DB,{...payload,id:crypto.randomUUID(),payloadHash:await targetHash(payload),status:'PENDING',createdAt:run.createdAt||new Date().toISOString()});
-        // Only for a genuinely new approval (never a dashboard load
-        // re-reconciling a run already processed) -- see
-        // lib/auto-remediate.js for what "fully green" means here.
-        if(row) await maybeAutoRemediateGreenReport({approvalRow:row,db:context.env.CONTROL_DB,github});
+        const review=await github.getWorkflowRunReview(run.id);
+        const rr=review?.reviewResult;
+        const findings=Array.isArray(rr?.findings)?rr.findings:[];
+        const findingCount=Number.isFinite(Number(rr?.findingCount))?Number(rr.findingCount):findings.length;
+        const status=String(rr?.status||'').toUpperCase();
+        const recommendation=String(rr?.recommendedAction||'').toUpperCase();
+        const noAction=(status==='HEALTHY' && findingCount===0 && (!recommendation || recommendation==='NO_ACTION' || recommendation==='AUTO_ARCHIVE'));
+        if(!noAction){
+          const payload={agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id)};
+          const row=await ensureRunReviewApproval(context.env.CONTROL_DB,{...payload,id:crypto.randomUUID(),payloadHash:await targetHash(payload),status:'PENDING',createdAt:run.createdAt||new Date().toISOString()});
+          if(row) await maybeAutoRemediateGreenReport({approvalRow:row,db:context.env.CONTROL_DB,github});
+        }
       }
     }
     const reconciledApprovals=await listPendingApprovals(context.env.CONTROL_DB);
