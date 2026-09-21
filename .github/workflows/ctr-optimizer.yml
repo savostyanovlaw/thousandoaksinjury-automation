@@ -35,3 +35,21 @@ jobs:
           if [ -f artifacts/ctr-optimizer/report.json ]; then
             python -c "import base64,pathlib; print('SLC_REVIEW_JSON_B64='+base64.b64encode(pathlib.Path('artifacts/ctr-optimizer/report.json').read_bytes()).decode())"
           fi
+
+      - name: Notify Control Center of new result
+        if: always()
+        env:
+          CONTROL_CENTER_URL: ${{ vars.CONTROL_CENTER_URL }}
+          CONTROL_INGEST_TOKEN: ${{ secrets.CONTROL_INGEST_TOKEN }}
+        run: |
+          if [ ! -f artifacts/ctr-optimizer/report.json ]; then
+            echo "No report produced; skipping Control Center ingestion."
+          elif [ -z "$CONTROL_CENTER_URL" ] || [ -z "$CONTROL_INGEST_TOKEN" ]; then
+            echo "::warning::CONTROL_CENTER_URL/CONTROL_INGEST_TOKEN not configured; the result will still reach Needs Approval next time the dashboard loads."
+          else
+            curl -sS -f -X POST "$CONTROL_CENTER_URL/api/control/ingest/review-result" \
+              -H "X-Control-Ingest-Token: $CONTROL_INGEST_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"agentId\":\"ctr-optimizer\",\"runId\":\"${GITHUB_RUN_ID}\"}" \
+              || echo "::warning::Control Center ingest call failed; dashboard-load reconciliation remains as fallback."
+          fi

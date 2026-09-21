@@ -1,8 +1,22 @@
 name: Video Engine
 on:
-  # Autonomous scheduling is intentionally paused until this agent consumes real
-  # site/opportunity inputs instead of production-cycle placeholder material.
+  # Event-driven: dispatched with a real topic/location/source rather than a
+  # fabricated "production-cycle" placeholder, so autonomous scheduling
+  # stays paused until a real caller supplies real content.
   workflow_dispatch:
+    inputs:
+      topic:
+        description: Real personal-injury topic (e.g. from a live opportunity finding)
+        required: true
+        type: string
+      location:
+        description: Real target location
+        required: true
+        type: string
+      source_id:
+        description: Identifier of the real source that produced this topic
+        required: true
+        type: string
   pull_request:
     paths: ['scripts/video_engine.py','tests/test_video_engine.py','.github/workflows/video-engine.yml']
 permissions: {contents: read}
@@ -15,15 +29,40 @@ jobs:
         with: {python-version: '3.12'}
       - run: python -m unittest tests.test_video_engine -v
       - name: Generate attorney-review video package
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TOPIC: ${{ inputs.topic }}
+          LOCATION: ${{ inputs.location }}
+          SOURCE_ID: ${{ inputs.source_id }}
         run: |
           mkdir -p artifacts/video-engine
-          python - <<'PY'
-          import json
+          python3 - <<'PY'
+          import json, os
           from scripts.video_engine import build_video_package
-          result=build_video_package("California personal injury claim","California","production-cycle")
+          result=build_video_package(os.environ["TOPIC"],os.environ["LOCATION"],os.environ["SOURCE_ID"])
           open("artifacts/video-engine/package.json","w").write(json.dumps(result,ensure_ascii=False,indent=2))
           PY
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
         with: {name: video-engine-package, path: artifacts/video-engine/package.json, retention-days: 30}
       - name: Expose result to owner Review Queue
+        if: github.event_name == 'workflow_dispatch'
         run: python -c "import base64,pathlib; print('SLC_REVIEW_JSON_B64='+base64.b64encode(pathlib.Path('artifacts/video-engine/package.json').read_bytes()).decode())"
+
+      - name: Notify Control Center of new result
+        if: always() && github.event_name == 'workflow_dispatch'
+        env:
+          CONTROL_CENTER_URL: ${{ vars.CONTROL_CENTER_URL }}
+          CONTROL_INGEST_TOKEN: ${{ secrets.CONTROL_INGEST_TOKEN }}
+        run: |
+          if [ ! -f artifacts/video-engine/package.json ]; then
+            echo "No report produced; skipping Control Center ingestion."
+          elif [ -z "$CONTROL_CENTER_URL" ] || [ -z "$CONTROL_INGEST_TOKEN" ]; then
+            echo "::warning::CONTROL_CENTER_URL/CONTROL_INGEST_TOKEN not configured; the result will still reach Needs Approval next time the dashboard loads."
+          else
+            curl -sS -f -X POST "$CONTROL_CENTER_URL/api/control/ingest/review-result" \
+              -H "X-Control-Ingest-Token: $CONTROL_INGEST_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"agentId\":\"video-engine\",\"runId\":\"${GITHUB_RUN_ID}\"}" \
+              || echo "::warning::Control Center ingest call failed; dashboard-load reconciliation remains as fallback."
+          fi

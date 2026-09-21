@@ -29,6 +29,15 @@ export async function onRequest(context){
     return jsonNoStore(result);
   }
 
+  // Machine-to-machine ingestion from GitHub Actions runs. This has no
+  // browser session to present, so it is exempt from the cookie-based
+  // authorization gate below; the route itself independently requires a
+  // constant-time-compared shared secret (requireIngestToken) and fails
+  // closed if that secret is not configured.
+  if(url.pathname==='/api/control/ingest/review-result' && request.method==='POST'){
+    return context.next();
+  }
+
   if(url.pathname==='/auth/login' && request.method==='GET') return htmlResponse(loginPage());
 
   if(url.pathname==='/auth/login' && request.method==='POST'){

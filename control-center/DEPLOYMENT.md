@@ -10,6 +10,16 @@ The Control Center is a separate Cloudflare Pages project. Do not attach it to t
 - `CLOUDFLARE_API_TOKEN` = server-side secret used only by the read-only Cloudflare project status adapter
 - `GITHUB_TOKEN` = secret with only the repository permissions required to read Actions/issues/PRs and dispatch registered workflows
 - `CONTROL_DB` = Cloudflare D1 binding initialized from `schema.sql`
+- `CONTROL_INGEST_TOKEN` = server-side secret shared with the repository's GitHub Actions `CONTROL_INGEST_TOKEN` secret. It authorizes `POST /api/control/ingest/review-result`, the only unauthenticated-by-cookie route: a producing agent workflow calls it the moment its run finishes so the result becomes a persistent Needs Approval row without a human opening the dashboard first. Must be at least 20 characters, matching `verifyCredentials`'s minimum. Rotate by changing it in both places together; the route fails closed (401) if either side is unset.
+
+## Autonomous result ingestion (GitHub Actions -> Control Center)
+
+Every producing agent workflow ends with a "Notify Control Center" step that POSTs `{agentId, runId}` to `$CONTROL_CENTER_URL/api/control/ingest/review-result` with header `X-Control-Ingest-Token`. For this to work in production, the repository owner must configure, in addition to the binding above:
+
+- GitHub Actions repository secret `CONTROL_INGEST_TOKEN` = the same value as the Cloudflare Pages secret.
+- GitHub Actions repository variable `CONTROL_CENTER_URL` = the Control Center's production origin (e.g. `https://slc-ai-control.pages.dev` or its custom domain), no trailing slash.
+
+Until both are set, each workflow's notify step logs a warning and continues (it never fails the agent run); the dashboard's own `GET /api/control/state` reconciliation remains a fallback that still surfaces the result the next time a human opens the Control Center.
 
 No Cloudflare Zero Trust or Access application is required.
 

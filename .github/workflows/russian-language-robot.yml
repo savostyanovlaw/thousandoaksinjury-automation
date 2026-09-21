@@ -1,8 +1,27 @@
 name: Russian Language Robot
 on:
-  # Autonomous scheduling is intentionally paused until this agent consumes real
-  # site/opportunity inputs instead of production-cycle placeholder material.
+  # Event-driven: dispatched with a real English source (title/body) that
+  # already exists, e.g. from Content Creator's own generated draft. It is
+  # never invoked with fabricated/placeholder source material, so autonomous
+  # scheduling stays paused until a real caller supplies real content.
   workflow_dispatch:
+    inputs:
+      source_id:
+        description: Identifier of the real source content being localized
+        required: true
+        type: string
+      source_revision:
+        description: Revision of the real source content (commit SHA or run id)
+        required: true
+        type: string
+      title:
+        description: Real English source title to localize
+        required: true
+        type: string
+      body:
+        description: Real English source body to localize
+        required: true
+        type: string
   pull_request:
     paths: ['scripts/russian_language_robot.py','tests/test_russian_language_robot.py','.github/workflows/russian-language-robot.yml']
 permissions: {contents: read}
@@ -15,15 +34,41 @@ jobs:
         with: {python-version: '3.12'}
       - run: python -m unittest tests.test_russian_language_robot -v
       - name: Generate attorney-review Russian package
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SOURCE_ID: ${{ inputs.source_id }}
+          SOURCE_REVISION: ${{ inputs.source_revision }}
+          TITLE: ${{ inputs.title }}
+          BODY: ${{ inputs.body }}
         run: |
           mkdir -p artifacts/russian-language-robot
-          python - <<'PY'
-          import json
+          python3 - <<'PY'
+          import json, os
           from scripts.russian_language_robot import localize
-          result=localize("production-cycle","main","California Personal Injury Review Draft","Educational personal injury draft prepared for attorney review.")
+          result=localize(os.environ["SOURCE_ID"],os.environ["SOURCE_REVISION"],os.environ["TITLE"],os.environ["BODY"])
           open("artifacts/russian-language-robot/draft.json","w").write(json.dumps(result,ensure_ascii=False,indent=2))
           PY
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
         with: {name: russian-language-review-draft, path: artifacts/russian-language-robot/draft.json, retention-days: 30}
       - name: Expose result to owner Review Queue
+        if: github.event_name == 'workflow_dispatch'
         run: python -c "import base64,pathlib; print('SLC_REVIEW_JSON_B64='+base64.b64encode(pathlib.Path('artifacts/russian-language-robot/draft.json').read_bytes()).decode())"
+
+      - name: Notify Control Center of new result
+        if: always() && github.event_name == 'workflow_dispatch'
+        env:
+          CONTROL_CENTER_URL: ${{ vars.CONTROL_CENTER_URL }}
+          CONTROL_INGEST_TOKEN: ${{ secrets.CONTROL_INGEST_TOKEN }}
+        run: |
+          if [ ! -f artifacts/russian-language-robot/draft.json ]; then
+            echo "No report produced; skipping Control Center ingestion."
+          elif [ -z "$CONTROL_CENTER_URL" ] || [ -z "$CONTROL_INGEST_TOKEN" ]; then
+            echo "::warning::CONTROL_CENTER_URL/CONTROL_INGEST_TOKEN not configured; the result will still reach Needs Approval next time the dashboard loads."
+          else
+            curl -sS -f -X POST "$CONTROL_CENTER_URL/api/control/ingest/review-result" \
+              -H "X-Control-Ingest-Token: $CONTROL_INGEST_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"agentId\":\"russian-language-robot\",\"runId\":\"${GITHUB_RUN_ID}\"}" \
+              || echo "::warning::Control Center ingest call failed; dashboard-load reconciliation remains as fallback."
+          fi

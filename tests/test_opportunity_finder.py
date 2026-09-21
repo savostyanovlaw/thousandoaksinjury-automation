@@ -38,4 +38,21 @@ class OpportunityFinderTests(unittest.TestCase):
         self.assertEqual(finding['priority'],'HIGH')
         self.assertIn('retry',finding['recommendedAction'].lower())
 
+    def test_topic_for_practice_area_page_is_a_real_legal_topic_not_the_issue_type(self):
+        topic,city=agent.topic_and_city_for_url('https://thousandoaksinjury.com/dog-bite-lawyer/')
+        self.assertEqual(topic,'dog bite')
+        self.assertNotIn('review',topic)
+        self.assertNotIn('_',topic)
+        self.assertEqual(city,'Thousand Oaks')
+
+    def test_topic_for_city_page_uses_the_city_and_a_generic_pi_topic(self):
+        topic,city=agent.topic_and_city_for_url('https://thousandoaksinjury.com/camarillo/')
+        self.assertEqual(topic,'personal injury')
+        self.assertEqual(city,'Camarillo')
+
+    def test_topic_for_homepage_falls_back_to_default_city(self):
+        topic,city=agent.topic_and_city_for_url('https://thousandoaksinjury.com/')
+        self.assertEqual(topic,'personal injury')
+        self.assertEqual(city,'Thousand Oaks')
+
 if __name__=='__main__': unittest.main()

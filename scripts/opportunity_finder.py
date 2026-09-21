@@ -5,11 +5,45 @@ Read-only by design: fetches public pages and writes review-only proposals. It
 never publishes or edits production content.
 """
 from __future__ import annotations
-import argparse, json, re, urllib.request
+import argparse, json, re, urllib.parse, urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
 
 UA = "SavostyanovLaw-OpportunityFinder/1.0"
+
+DEFAULT_CITY = "Thousand Oaks"
+CITY_LABELS = {
+    "agoura-hills": "Agoura Hills",
+    "westlake-village": "Westlake Village",
+    "oak-park": "Oak Park",
+    "newbury-park": "Newbury Park",
+    "camarillo": "Camarillo",
+    "simi-valley": "Simi Valley",
+}
+PRACTICE_AREA_TOPICS = {
+    "car-accident-lawyer": "car accident",
+    "dog-bite-lawyer": "dog bite",
+    "slip-and-fall-lawyer": "slip and fall accident",
+}
+
+
+def topic_and_city_for_url(url: str, default_city: str = DEFAULT_CITY) -> tuple[str, str]:
+    """Derive a real personal-injury topic/city from a live page URL.
+
+    A technical SEO opportunity type (``h1_count``, ``missing_title``, ...)
+    describes a structural defect on a page, not a legal topic. Handing that
+    raw issue type to Content Creator as the "topic" produces nonsense like a
+    "h1 count review" article. This maps the page's own path back to the real
+    practice area or city it covers, so Content Creator drafts something an
+    attorney would recognize as reviewable content.
+    """
+    path = urllib.parse.urlsplit(url).path.strip("/")
+    slug = path.split("/", 1)[0] if path else ""
+    if slug in PRACTICE_AREA_TOPICS:
+        return PRACTICE_AREA_TOPICS[slug], default_city
+    if slug in CITY_LABELS:
+        return "personal injury", CITY_LABELS[slug]
+    return "personal injury", default_city
 
 class PageParser(HTMLParser):
     def __init__(self):

@@ -433,13 +433,20 @@ def main() -> int:
     parser.add_argument("--base-url", default=PRODUCTION_BASE_URL)
     parser.add_argument("--output", default="artifacts/technical-seo-watchdog/report.json")
     args = parser.parse_args()
+    # A detected SEO/content finding is the watchdog's intended product, not an
+    # operational failure of the watchdog itself: it must not turn the GitHub
+    # Actions run red, or every legitimate finding would be misread by fleet
+    # health monitoring (and the Control Center) as "the agent is broken."
+    # Producing the report successfully is what "healthy agent run" means
+    # here; an uncaught exception below still fails the process normally.
     failures = run_checks(args.base_url)
     write_report(args.output, args.base_url, failures)
     if failures:
         for failure in failures:
             print(f"FAIL {failure.fingerprint}: {failure.evidence}")
-        return 1
-    print("Technical SEO Watchdog: healthy")
+        print(f"Technical SEO Watchdog: {len(failures)} finding(s) reported for owner review")
+    else:
+        print("Technical SEO Watchdog: healthy")
     return 0
 
 

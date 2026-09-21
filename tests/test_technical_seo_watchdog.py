@@ -1,5 +1,10 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
+from scripts import technical_seo_watchdog as watchdog
 from scripts.technical_seo_watchdog import (
     normalize_path,
     parse_robots,
@@ -49,6 +54,29 @@ class WatchdogCoreTests(unittest.TestCase):
     def test_normalize_path_keeps_root_and_adds_trailing_slash(self):
         self.assertEqual(normalize_path("/"), "/")
         self.assertEqual(normalize_path("/oak-park"), "/oak-park/")
+
+    def test_main_exits_zero_with_findings_present(self):
+        # A detected finding is the watchdog's expected product, not a
+        # runtime defect of the agent itself: main() must exit 0 whenever it
+        # successfully produces a report, whether or not that report is
+        # healthy. Only a genuine crash (an uncaught exception) should make
+        # the process exit non-zero.
+        failure = make_failure("robots", "/robots.txt", "evidence", "fix it")
+        with tempfile.TemporaryDirectory() as tmp:
+            output = str(Path(tmp) / "report.json")
+            with patch.object(watchdog, "run_checks", return_value=[failure]):
+                with patch("sys.argv", ["technical_seo_watchdog.py", "--output", output]):
+                    self.assertEqual(watchdog.main(), 0)
+            report = json.loads(Path(output).read_text(encoding="utf-8"))
+            self.assertFalse(report["healthy"])
+            self.assertEqual(len(report["failures"]), 1)
+
+    def test_main_exits_zero_when_healthy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = str(Path(tmp) / "report.json")
+            with patch.object(watchdog, "run_checks", return_value=[]):
+                with patch("sys.argv", ["technical_seo_watchdog.py", "--output", output]):
+                    self.assertEqual(watchdog.main(), 0)
 
 
 if __name__ == "__main__":

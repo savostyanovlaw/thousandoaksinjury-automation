@@ -101,6 +101,24 @@ jobs:
             echo "SLC_REVIEW_ERROR=watchdog report missing"
           fi
 
+      - name: Notify Control Center of new result
+        if: always()
+        env:
+          CONTROL_CENTER_URL: ${{ vars.CONTROL_CENTER_URL }}
+          CONTROL_INGEST_TOKEN: ${{ secrets.CONTROL_INGEST_TOKEN }}
+        run: |
+          if [ ! -f artifacts/technical-seo-watchdog/report.json ]; then
+            echo "No report produced; skipping Control Center ingestion."
+          elif [ -z "$CONTROL_CENTER_URL" ] || [ -z "$CONTROL_INGEST_TOKEN" ]; then
+            echo "::warning::CONTROL_CENTER_URL/CONTROL_INGEST_TOKEN not configured; the result will still reach Needs Approval next time the dashboard loads."
+          else
+            curl -sS -f -X POST "$CONTROL_CENTER_URL/api/control/ingest/review-result" \
+              -H "X-Control-Ingest-Token: $CONTROL_INGEST_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"agentId\":\"technical-seo-watchdog\",\"runId\":\"${GITHUB_RUN_ID}\"}" \
+              || echo "::warning::Control Center ingest call failed; dashboard-load reconciliation remains as fallback."
+          fi
+
       - name: Upload watchdog report
         if: always()
         uses: actions/upload-artifact@v4
@@ -110,9 +128,17 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Fail workflow when production checks are unhealthy
-        if: always() && steps.check.outcome == 'failure'
+      - name: Fail workflow only on a genuine watchdog runtime defect
+        if: always()
         run: |
-          echo "Technical SEO Watchdog detected a critical production failure."
-          exit 1
+          # Detected SEO/content findings are the watchdog's normal, expected
+          # output (surfaced via GitHub issues and the Control Center Review
+          # Queue), not a reason to mark this run FAILURE. Only fail the run
+          # when the watchdog itself did not produce a report at all, which
+          # is a genuine operational defect distinct from a production
+          # finding.
+          if [ ! -f artifacts/technical-seo-watchdog/report.json ]; then
+            echo "Technical SEO Watchdog did not produce a report; treating this as an agent runtime failure."
+            exit 1
+          fi
 

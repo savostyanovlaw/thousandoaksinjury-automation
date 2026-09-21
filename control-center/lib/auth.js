@@ -107,6 +107,14 @@ export async function requireAuthorizedUser(context,env){
   return user;
 }
 
+export async function requireIngestToken(context,env){
+  const expected=typeof env?.CONTROL_INGEST_TOKEN === 'string' ? env.CONTROL_INGEST_TOKEN.trim() : '';
+  if(!expected || expected.length < MIN_PASSWORD_LENGTH) throw new AuthorizationError('Ingest token not configured');
+  const provided=context?.request?.headers?.get?.('x-control-ingest-token') || '';
+  if(!(await constantTimeStringEqual(String(provided),expected))) throw new AuthorizationError();
+  return true;
+}
+
 export function sessionCookie(token,maxAgeSeconds=28800){
   return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAgeSeconds}`;
 }
