@@ -24,7 +24,17 @@ on:
         type: string
       material_change_reason:
         description: Specific, real reason this page needs a refresh
-        required: true
+        required: false
+        type: string
+      proposed_changes_json:
+        description: JSON array of concrete before/after changes with reason and sources; empty means no actionable proposal
+        required: false
+        default: '[]'
+        type: string
+      sources_json:
+        description: JSON array of source URLs/citations supporting the proposed changes
+        required: false
+        default: '[]'
         type: string
   pull_request:
     paths: ['scripts/content_refresher.py','tests/test_content_refresher.py','.github/workflows/content-refresher.yml']
@@ -45,12 +55,18 @@ jobs:
           TITLE: ${{ inputs.title }}
           BODY: ${{ inputs.body }}
           MATERIAL_CHANGE_REASON: ${{ inputs.material_change_reason }}
+          PROPOSED_CHANGES_JSON: ${{ inputs.proposed_changes_json }}
+          SOURCES_JSON: ${{ inputs.sources_json }}
         run: |
           mkdir -p artifacts/content-refresher
           python3 - <<'PY'
           import json, os
           from scripts.content_refresher import refresh
-          result=refresh(os.environ["SOURCE_ID"],os.environ["SOURCE_REVISION"],os.environ["TITLE"],os.environ["BODY"],[os.environ["MATERIAL_CHANGE_REASON"]])
+          reason=os.environ.get("MATERIAL_CHANGE_REASON","").strip()
+          reasons=[reason] if reason else []
+          proposed=json.loads(os.environ.get("PROPOSED_CHANGES_JSON") or "[]")
+          sources=json.loads(os.environ.get("SOURCES_JSON") or "[]")
+          result=refresh(os.environ["SOURCE_ID"],os.environ["SOURCE_REVISION"],os.environ["TITLE"],os.environ["BODY"],reasons,proposed,sources)
           open("artifacts/content-refresher/draft.json","w").write(json.dumps(result,ensure_ascii=False,indent=2))
           PY
       - uses: actions/upload-artifact@v4
@@ -67,6 +83,8 @@ jobs:
         run: |
           if [ ! -f artifacts/content-refresher/draft.json ]; then
             echo "No report produced; skipping Control Center ingestion."
+          elif python3 -c "import json,sys; d=json.load(open('artifacts/content-refresher/draft.json')); sys.exit(0 if d.get('approvalState')=='NOT_REQUIRED' else 1)"; then
+            echo "No actionable findings; auto-archived in workflow history and not added to Needs Approval."
           elif [ -z "$CONTROL_CENTER_URL" ]; then
             echo "::warning::CONTROL_CENTER_URL not configured; the result will still reach Needs Approval next time the dashboard loads."
           else

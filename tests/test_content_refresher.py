@@ -1,28 +1,40 @@
 import unittest
 from scripts import content_refresher as agent
 
-
 class ContentRefresherTests(unittest.TestCase):
-    def test_refresh_is_revision_bound_and_review_only(self):
-        artifact = agent.refresh("page-101", "rev-4", "Car Accident FAQ", "Existing reviewed content.", ["outdated statistic", "broken internal reference"])
-        self.assertEqual(artifact["agent"], "content-refresher")
-        self.assertEqual(artifact["sourceId"], "page-101")
-        self.assertEqual(artifact["sourceRevision"], "rev-4")
-        self.assertEqual(artifact["mode"], "REVIEW_ONLY")
-        self.assertTrue(artifact["requiresAttorneyReview"])
-        self.assertFalse(artifact["publishAllowed"])
-        self.assertEqual(artifact["approvalState"], "PENDING")
-        self.assertEqual(len(artifact["materialChangeReasons"]), 2)
+    def test_zero_findings_auto_archives(self):
+        a=agent.refresh("page-1","rev-1","Title","Existing body.",[])
+        self.assertEqual(a["status"],"HEALTHY")
+        self.assertEqual(a["findingCount"],0)
+        self.assertEqual(a["recommendedAction"],"AUTO_ARCHIVE")
+        self.assertEqual(a["approvalState"],"NOT_REQUIRED")
 
-    def test_preserves_source_and_does_not_claim_direct_mutation(self):
-        artifact = agent.refresh("page-102", "rev-1", "Dog Bite Guide", "Preserve evidence.", ["clarity"])
-        self.assertIn("Preserve evidence.", artifact["draftBody"])
-        self.assertFalse(artifact["siteMutated"])
+    def test_reason_without_concrete_diff_is_not_sent_for_approval(self):
+        a=agent.refresh("page-2","rev-2","Title","Existing body.",["outdated statistic"])
+        self.assertEqual(a["status"],"NEEDS_RESEARCH")
+        self.assertEqual(a["findingCount"],0)
+        self.assertEqual(a["approvalState"],"NOT_REQUIRED")
+        self.assertNotIn("draftBody",a)
 
-    def test_rejects_missing_change_reason(self):
-        with self.assertRaises(ValueError):
-            agent.refresh("page-103", "rev-2", "Slip and Fall", "Existing content.", [])
+    def test_actionable_review_contains_page_diff_reason_sources_risk_and_effect(self):
+        a=agent.refresh("page-3","rev-3","FAQ","Old sentence.",["deadline language needs verification"],[
+            {"before":"Old sentence.","after":"Verified replacement.","reason":"deadline language needs verification","sources":["https://example.invalid/source"]}
+        ])
+        self.assertEqual(a["status"],"REVIEW")
+        self.assertEqual(a["findingCount"],1)
+        f=a["findings"][0]
+        self.assertEqual(f["page"],"page-3")
+        self.assertEqual(f["diff"]["before"],"Old sentence.")
+        self.assertEqual(f["diff"]["after"],"Verified replacement.")
+        self.assertEqual(f["risk"],"LEGAL_REVIEW")
+        self.assertEqual(len(f["sources"]),1)
+        self.assertIn("branch/PR",f["afterApproval"])
 
+    def test_does_not_dump_full_page_as_proposed_artifact(self):
+        body="A very long existing page body that should not be repeated as a fake proposal."
+        a=agent.refresh("page-4","rev-4","Title",body,["clarity"])
+        self.assertNotIn("draftBody",a)
+        self.assertNotIn(body,str(a))
 
-if __name__ == "__main__":
+if __name__=="__main__":
     unittest.main()
