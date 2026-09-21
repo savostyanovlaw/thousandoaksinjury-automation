@@ -23,57 +23,85 @@ export async function executeApprovalDecision({record,decision,user,db,github}){
     // remediation for a given approval at most once, matching the same
     // claim-then-act pattern used elsewhere in this file.
     const decided=await decideApproval(db,record.id,'APPROVED',user.email);
-    const review=await github.getWorkflowRunReview(record.targetId);
-    const r=review?.reviewResult||{};
-    const findings=Array.isArray(r.findings)?r.findings:[];
-    const actionable=findings.length?findings:[r];
-    const jobs=[];
-    const route=(type)=>({
-      title:'technical-seo-fixer',meta_description:'technical-seo-fixer',canonical:'technical-seo-fixer',
-      broken_link:'technical-seo-fixer',redirect:'technical-seo-fixer',sitemap:'technical-seo-fixer',
-      robots:'technical-seo-fixer',schema:'technical-seo-fixer',structured_data:'technical-seo-fixer'
-    }[String(type||'').toLowerCase()]|| (record.agentId==='technical-seo-watchdog'?'technical-seo-fixer':null));
-    // Every actionable finding in the approved report gets its own
-    // remediation job -- a multi-finding report must remediate all of its
-    // findings, not just the first (remediation_jobs.owner_approval_id is
-    // no longer UNIQUE; see remediation-store.js).
-    for(const item of actionable){
-      const type=item?.findingType||item?.type||item?.code||'general';
-      const summary=String(item?.summary||item?.title||item?.message||r?.title||'Approved agent finding').slice(0,1000);
-      const recommendedAction=String(item?.recommendedAction||item?.recommendation||r?.recommendation||'Prepare a repository-level fix for owner review.').slice(0,1000);
-      const remediationAgentId=route(type);
-      const job={id:crypto.randomUUID(),sourceAgentId:record.agentId,sourceRunId:String(record.targetId),ownerApprovalId:record.id,findingType:String(type),summary,recommendedAction,rawFinding:item||{},remediationAgentId,createdAt:new Date().toISOString()};
-      await createRemediationJob(db,job);
-      if(!remediationAgentId){
-        await updateRemediationJob(db,job.id,'BLOCKED');
-        jobs.push({...job,status:'BLOCKED'});
-        continue;
+    // Past this point the approval is already claimed: nothing below may
+    // throw and skip the caller's audit write. Any failure -- including one
+    // fetching the review itself, not just an individual remediation
+    // dispatch -- is returned as a structured failed result instead, so the
+    // decision is always audited even when execution could not complete.
+    try{
+      const review=await github.getWorkflowRunReview(record.targetId);
+      const r=review?.reviewResult||{};
+      // Different agents' real reports use different real array field names
+      // for their per-item results: opportunity-finder emits "findings"
+      // (items keyed by "type"), while Technical SEO Watchdog emits
+      // "failures" (items keyed by "check", from its Failure dataclass).
+      // Checking only "findings" silently collapsed every Watchdog report
+      // -- however many real failures it actually found -- into a single
+      // generic pseudo-item, which defeated the whole point of routing each
+      // finding to its own remediation job.
+      const findings=Array.isArray(r.findings)?r.findings:(Array.isArray(r.failures)?r.failures:[]);
+      const actionable=findings.length?findings:[r];
+      const jobs=[];
+      const route=(type)=>({
+        title:'technical-seo-fixer',meta_description:'technical-seo-fixer',canonical:'technical-seo-fixer',
+        broken_link:'technical-seo-fixer',redirect:'technical-seo-fixer',sitemap:'technical-seo-fixer',
+        robots:'technical-seo-fixer',schema:'technical-seo-fixer',structured_data:'technical-seo-fixer',
+        content_stale:'content-refresher'
+      }[String(type||'').toLowerCase()]|| (record.agentId==='technical-seo-watchdog'?'technical-seo-fixer':null));
+      // Every actionable finding in the approved report gets its own
+      // remediation job -- a multi-finding report must remediate all of its
+      // findings, not just the first (remediation_jobs.owner_approval_id is
+      // no longer UNIQUE; see remediation-store.js).
+      for(const item of actionable){
+        const type=item?.findingType||item?.type||item?.check||item?.code||'general';
+        const summary=String(item?.summary||item?.evidence||item?.title||item?.message||r?.title||'Approved agent finding').slice(0,1000);
+        const recommendedAction=String(item?.recommendedAction||item?.recommended_fix||item?.recommendation||r?.recommendation||'Prepare a repository-level fix for owner review.').slice(0,1000);
+        const remediationAgentId=route(type);
+        const job={id:crypto.randomUUID(),sourceAgentId:record.agentId,sourceRunId:String(record.targetId),ownerApprovalId:record.id,findingType:String(type),summary,recommendedAction,rawFinding:item||{},remediationAgentId,createdAt:new Date().toISOString()};
+        await createRemediationJob(db,job);
+        if(!remediationAgentId){
+          await updateRemediationJob(db,job.id,'BLOCKED');
+          jobs.push({...job,status:'BLOCKED'});
+          continue;
+        }
+        // A transient dispatch failure (GitHub/network) must not lose the
+        // finding or corrupt the approval: the job lands in a clear terminal
+        // FAILED state with the error recorded, instead of throwing and
+        // abandoning the remaining findings in this same approval.
+        try{
+          await github.dispatchRemediation(job);
+          await updateRemediationJob(db,job.id,'DISPATCHED');
+          jobs.push({...job,status:'DISPATCHED'});
+        }catch(error){
+          await updateRemediationJob(db,job.id,'FAILED');
+          jobs.push({...job,status:'FAILED',error:String(error?.message||error).slice(0,300)});
+        }
       }
-      // A transient dispatch failure (GitHub/network) must not lose the
-      // finding or corrupt the approval: the job lands in a clear terminal
-      // FAILED state with the error recorded, instead of throwing and
-      // abandoning the remaining findings in this same approval.
-      try{
-        await github.dispatchRemediation(job);
-        await updateRemediationJob(db,job.id,'DISPATCHED');
-        jobs.push({...job,status:'DISPATCHED'});
-      }catch(error){
-        await updateRemediationJob(db,job.id,'FAILED');
-        jobs.push({...job,status:'FAILED',error:String(error?.message||error).slice(0,300)});
-      }
+      return {ok:true,executed:false,reviewAccepted:true,remediationJobs:jobs,...decided};
+    }catch(error){
+      return {ok:false,executed:false,failed:true,error:String(error?.message||error).slice(0,300),...decided};
     }
-    return {ok:true,executed:false,reviewAccepted:true,remediationJobs:jobs,...decided};
   }
   if(record.targetType!=='pull_request' || record.action!=='MERGE_PR') throw new Error('Unsupported RED action');
   const current=await github.getPullRevision(record.targetId);
   const payload={agentId:record.agentId,action:record.action,targetType:record.targetType,targetId:String(record.targetId),targetRevision:String(current.targetRevision)};
   const currentHash=await targetHash(payload);
   if(current.targetRevision!==record.targetRevision || currentHash!==record.payloadHash) throw new Error('Stale approval target');
-  await decideApproval(db,record.id,'APPROVED',user.email);
-  assertApprovalExecutable({...record,status:'APPROVED',consumedAt:null},payload);
-  const merged=await github.mergePull(record.targetId,record.targetRevision);
-  await consumeApproval(db,record.id);
-  return {ok:true,executed:true,merged:!!merged?.merged,message:merged?.message||'Merge dispatched'};
+  const decided=await decideApproval(db,record.id,'APPROVED',user.email);
+  // As above: the claim already happened, so a failed merge must come back
+  // as a result the caller can audit, not an exception that skips it. The
+  // approval is left APPROVED-but-unconsumed on failure -- a deliberate,
+  // observable "stuck" state (surfaced by the Agent Orchestrator) rather
+  // than a silent retry, since the underlying PR may itself need attention
+  // before a fresh approval cycle can safely execute.
+  try{
+    assertApprovalExecutable({...record,status:'APPROVED',consumedAt:null},payload);
+    const merged=await github.mergePull(record.targetId,record.targetRevision);
+    await consumeApproval(db,record.id);
+    return {ok:true,executed:true,merged:!!merged?.merged,message:merged?.message||'Merge dispatched'};
+  }catch(error){
+    return {ok:false,executed:false,failed:true,error:String(error?.message||error).slice(0,300),...decided};
+  }
 }
 
 export async function onRequestPost(context){
@@ -82,7 +110,17 @@ export async function onRequestPost(context){
     await ensureControlSchema(context.env.CONTROL_DB);
     const record=await getApproval(context.env.CONTROL_DB,context.params.id); const github=createGitHubAdapter({token:context.env.GITHUB_TOKEN});
     const result=await executeApprovalDecision({record,decision:body.decision,user,db:context.env.CONTROL_DB,github});
-    await writeAudit(context.env.CONTROL_DB,{timestamp:new Date().toISOString(),actor:user.email,agentId:record.agentId,action:record.action,targetType:record.targetType,targetId:record.targetId,targetRevision:record.targetRevision,autonomy:record.action==='REVIEW_RESULT'?'YELLOW':'RED',result:body.decision==='APPROVE'?(record.action==='REVIEW_RESULT'?'review-approved':'approved-executed'):'rejected',approvalId:record.id,githubPrNumber:Number(record.targetId)});
+    // A structured {failed:true} result still means the approval WAS
+    // claimed (decideApproval already succeeded inside
+    // executeApprovalDecision) -- it must be audited as a failed execution,
+    // never silently dropped, so the owner has a durable record of exactly
+    // what was approved and that its execution did not complete.
+    const auditResult=body.decision!=='APPROVE'
+      ? 'rejected'
+      : result.failed
+        ? (record.action==='REVIEW_RESULT'?'review-approved-with-errors':'approved-execution-failed')
+        : (record.action==='REVIEW_RESULT'?'review-approved':'approved-executed');
+    await writeAudit(context.env.CONTROL_DB,{timestamp:new Date().toISOString(),actor:user.email,agentId:record.agentId,action:record.action,targetType:record.targetType,targetId:record.targetId,targetRevision:record.targetRevision,autonomy:record.action==='REVIEW_RESULT'?'YELLOW':'RED',result:auditResult,approvalId:record.id,githubPrNumber:Number(record.targetId)});
     return jsonResponse(result);
   }catch(error){ return errorResponse(error); }
 }
