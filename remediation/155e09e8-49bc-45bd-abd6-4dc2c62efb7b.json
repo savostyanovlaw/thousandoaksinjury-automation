@@ -1,0 +1,17 @@
+{
+  "jobId": "155e09e8-49bc-45bd-abd6-4dc2c62efb7b",
+  "sourceAgentId": "technical-seo-watchdog",
+  "sourceRunId": "35566434058",
+  "findingType": "general",
+  "summary": "Approved agent finding",
+  "recommendedAction": "Prepare a repository-level fix for owner review.",
+  "autonomy": "YELLOW",
+  "executionPolicy": {
+    "branchOnly": true,
+    "testsRequired": true,
+    "pullRequestRequired": true,
+    "mergeAllowed": false,
+    "deployAllowed": false,
+    "publishAllowed": false
+  }
+}
