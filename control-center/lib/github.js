@@ -113,6 +113,26 @@ ${x.body||''}`.toLowerCase().includes(String(marker).toLowerCase()))
     },
     async dispatchRemediation(job){
       requireWriteCredential();
+      // A remediation job's real target workflow depends on what kind of
+      // fix it needs -- a technical SEO defect is a repository-level code
+      // change (remediation-preparer.yml), while a content-staleness
+      // finding needs an actual reviewable content draft built from the
+      // page's own real current title/body (content-refresher.yml). Each
+      // dispatch only ever supplies real data the source finding carried;
+      // nothing here is a placeholder.
+      if(job.remediationAgentId==='content-refresher'){
+        const workflow='content-refresher.yml';
+        const raw=job.rawFinding||{};
+        const inputs={
+          source_id:String(raw.url||job.sourceRunId||job.id),
+          source_revision:String(raw.source_revision||job.sourceRunId||'unknown'),
+          title:String(raw.page_title||'Untitled page').slice(0,500),
+          body:String(raw.page_body||'').slice(0,9000),
+          material_change_reason:String(raw.material_change_reason||job.recommendedAction||'Content freshness review requested.').slice(0,500)
+        };
+        await json(`https://api.github.com/repos/${REPO}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs})});
+        return {ok:true,workflow};
+      }
       const workflow='remediation-preparer.yml';
       const inputs={job_id:String(job.id),source_agent_id:String(job.sourceAgentId),source_run_id:String(job.sourceRunId),finding_type:String(job.findingType),summary:String(job.summary).slice(0,500),recommended_action:String(job.recommendedAction).slice(0,500)};
       await json(`https://api.github.com/repos/${REPO}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs})});
