@@ -121,3 +121,33 @@ jobs:
           print(json.dumps({"dispatched":"russian-language-robot.yml","title":title}))
           PY
           fi
+
+      - name: Trigger Video Engine package from this real draft
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ ! -f artifacts/content-creator/draft.json ]; then
+            echo "No draft produced; skipping Video Engine handoff."
+          else
+            python3 - <<'PY'
+          import json, os, urllib.request
+          draft=json.load(open("artifacts/content-creator/draft.json"))
+          topic=draft.get("topic") or ""
+          city=draft.get("city") or ""
+          if not topic or not city:
+              print("Draft missing topic/city; skipping Video Engine handoff.")
+              raise SystemExit(0)
+          req=urllib.request.Request(
+              f"https://api.github.com/repos/{os.environ['REPO']}/actions/workflows/video-engine.yml/dispatches",
+              data=json.dumps({"ref":"main","inputs":{
+                  "topic":topic,
+                  "location":city,
+                  "source_id":f"content-creator:{os.environ.get('GITHUB_RUN_ID','')}"}}).encode(),
+              method="POST",
+              headers={"Authorization":f"Bearer {os.environ['GH_TOKEN']}","Accept":"application/vnd.github+json","Content-Type":"application/json"})
+          urllib.request.urlopen(req).read()
+          print(json.dumps({"dispatched":"video-engine.yml","topic":topic,"location":city}))
+          PY
+          fi

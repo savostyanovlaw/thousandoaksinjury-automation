@@ -6,7 +6,9 @@ on:
     paths:
       - 'scripts/agent_orchestrator.py'
       - 'scripts/agent_orchestrator_bridge.mjs'
+      - 'scripts/agent_orchestrator_health.py'
       - 'tests/test_agent_orchestrator.py'
+      - 'tests/test_agent_orchestrator_health.py'
       - 'tests/control-center/agent-e2e.test.mjs'
       - 'tests/control-center/live-artifact-approval.test.mjs'
       - '.github/workflows/agent-orchestrator.yml'
@@ -28,6 +30,7 @@ jobs:
         with:
           node-version: '20'
       - run: node --test tests/control-center/agent-e2e.test.mjs tests/control-center/live-artifact-approval.test.mjs
+      - run: python -m unittest tests.test_agent_orchestrator_health
       - name: Audit autonomous fleet health
         if: github.event_name != 'pull_request'
         env:
@@ -36,40 +39,12 @@ jobs:
         run: |
           python3 - <<'PY'
           import base64, json, os, urllib.request
-          expected = {
-            "Technical SEO Watchdog": 18,
-            "Opportunity Finder": 96,
-            "Competitor Monitor": 120,
-            "CTR Optimizer": 216,
-            "Internal Link Builder": 216,
-            "Local SEO Robot": 120,
-            "Content Refresher": 36,
-            "Russian Language Robot": 120,
-            "Video Engine": 120,
-          }
+          from scripts.agent_orchestrator_health import evaluate_fleet_health
           req=urllib.request.Request(
               f"https://api.github.com/repos/{os.environ['REPO']}/actions/runs?per_page=100",
               headers={"Authorization":f"Bearer {os.environ['GH_TOKEN']}","Accept":"application/vnd.github+json"})
           runs=json.load(urllib.request.urlopen(req)).get("workflow_runs",[])
-          latest={}
-          for r in runs:
-              if r.get("name") in expected and r.get("event") in ("schedule","push","workflow_dispatch"):
-                  latest.setdefault(r["name"],r)
-          findings=[]
-          from datetime import datetime, timezone
-          now=datetime.now(timezone.utc)
-          for name,max_hours in expected.items():
-              r=latest.get(name)
-              if not r:
-                  findings.append({"findingType":"agent_missing","title":f"{name} has no recent autonomous run","summary":"No qualifying workflow run found in the latest 100 repository runs.","recommendedAction":"Inspect workflow trigger and scheduling."})
-                  continue
-              stamp=r.get("updated_at") or r.get("created_at")
-              age=(now-datetime.fromisoformat(stamp.replace("Z","+00:00"))).total_seconds()/3600
-              if age > max_hours:
-                  findings.append({"findingType":"agent_stale","title":f"{name} is stale","summary":f"Last run is {age:.1f}h old; threshold {max_hours}h.","recommendedAction":"Inspect schedule/trigger and rerun safely."})
-              if r.get("status")=="completed" and r.get("conclusion") not in ("success","neutral"):
-                  findings.append({"findingType":"agent_failed","title":f"{name} last run failed","summary":f"Run #{r.get('run_number')} concluded {r.get('conclusion')}.","recommendedAction":"Inspect the failed workflow and repair the agent runtime.","url":r.get("html_url")})
-          report={"healthy":not findings,"findings":findings,"checkedAgents":len(expected)}
+          report=evaluate_fleet_health(runs)
           os.makedirs("artifacts/agent-orchestrator",exist_ok=True)
           open("artifacts/agent-orchestrator/health.json","w").write(json.dumps(report,indent=2))
           raw=json.dumps(report,separators=(",",":")).encode()

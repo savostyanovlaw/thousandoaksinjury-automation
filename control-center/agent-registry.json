@@ -1,6 +1,7 @@
 [
   {
     "id": "technical-seo-watchdog",
+    "trigger": "scheduled",
     "name": "Technical SEO Watchdog",
     "description": "Monitors production technical SEO and contact integrity.",
     "deployed": true,
@@ -28,6 +29,7 @@
   },
   {
     "id": "opportunity-finder",
+    "trigger": "scheduled",
     "cadenceHours": 96,
     "name": "Opportunity Finder",
     "description": "Finds SEO and demand opportunities.",
@@ -45,6 +47,7 @@
   },
   {
     "id": "local-seo-robot",
+    "trigger": "scheduled",
     "cadenceHours": 120,
     "name": "Local SEO Robot",
     "description": "Improves local search coverage.",
@@ -62,6 +65,7 @@
   },
   {
     "id": "content-creator",
+    "trigger": "event-driven",
     "cadenceHours": 96,
     "name": "Content Creator",
     "description": "Prepares content changes through pull requests.",
@@ -85,6 +89,7 @@
   },
   {
     "id": "video-engine",
+    "trigger": "event-driven",
     "cadenceHours": 120,
     "name": "Video Engine",
     "description": "Builds video content workflows.",
@@ -102,6 +107,7 @@
   },
   {
     "id": "ctr-optimizer",
+    "trigger": "scheduled",
     "cadenceHours": 216,
     "name": "CTR Optimizer",
     "description": "Optimizes titles and snippets.",
@@ -119,6 +125,7 @@
   },
   {
     "id": "internal-link-builder",
+    "trigger": "scheduled",
     "cadenceHours": 216,
     "name": "Internal Link Builder",
     "description": "Improves internal link structure.",
@@ -136,6 +143,7 @@
   },
   {
     "id": "russian-language-robot",
+    "trigger": "event-driven",
     "cadenceHours": 120,
     "name": "Russian-Language Robot",
     "description": "Maintains Russian-language content.",
@@ -153,6 +161,7 @@
   },
   {
     "id": "content-refresher",
+    "trigger": "event-driven",
     "cadenceHours": 36,
     "name": "Content Refresher",
     "description": "Refreshes stale content.",
@@ -170,6 +179,7 @@
   },
   {
     "id": "competitor-monitor",
+    "trigger": "scheduled",
     "cadenceHours": 120,
     "name": "Competitor Monitor",
     "description": "Tracks competitor changes and opportunities.",
