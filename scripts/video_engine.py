@@ -1,6 +1,13 @@
 import re
 
 _SAFE = re.compile(r"^[A-Za-z0-9 .,'&()/+-]{2,120}$")
+# source_id is a machine identifier, not display text -- real upstream
+# callers pass values like "content-creator:35558638407" (agent id + GitHub
+# run id, the same convention used by every other agent's source_id/
+# sourceRunId). It never appears in generated title/script/description
+# text, so it gets its own, separately-scoped charset instead of widening
+# _SAFE (which does appear in generated text) to allow ':'.
+_SAFE_ID = re.compile(r"^[A-Za-z0-9 .,'&()/+:_-]{2,160}$")
 
 
 def _validate(value, field):
@@ -9,10 +16,16 @@ def _validate(value, field):
     return value.strip()
 
 
+def _validate_id(value, field):
+    if not isinstance(value, str) or not _SAFE_ID.fullmatch(value.strip()):
+        raise ValueError(f"unsupported {field}")
+    return value.strip()
+
+
 def build_video_package(topic, location, source_id):
     topic = _validate(topic, "topic")
     location = _validate(location, "location")
-    source_id = _validate(source_id, "source_id")
+    source_id = _validate_id(source_id, "source_id")
     title = f"{topic.title()} in {location}: What Injury Claimants Should Know"
     hook = f"A {topic.lower()} can raise important questions about evidence, treatment, insurance, and legal deadlines."
     paragraphs = [

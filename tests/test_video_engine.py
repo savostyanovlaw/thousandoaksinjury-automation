@@ -35,6 +35,19 @@ class VideoEngineTests(unittest.TestCase):
         self.assertNotIn("guaranteed recovery", combined)
         self.assertNotIn("guaranteed result", combined)
 
+    def test_accepts_the_real_source_id_format_used_by_content_creators_automatic_handoff(self):
+        # Confirmed live: Content Creator's real automatic dispatch sends
+        # source_id="content-creator:<run_id>" (the same agent-id:run-id
+        # convention used across the fleet), and the old strict allowlist
+        # regex rejected the colon -- every real automatic Video Engine
+        # dispatch failed with "unsupported source_id" until this was fixed.
+        package = agent.build_video_package("rideshare accident", "Thousand Oaks", "content-creator:35558638407")
+        self.assertEqual(package["sourceId"], "content-creator:35558638407")
+
+    def test_still_rejects_unsafe_source_id_input(self):
+        with self.assertRaises(ValueError):
+            agent.build_video_package("dog bite", "California", "<script>alert(1)</script>")
+
 
 if __name__ == "__main__":
     unittest.main()
