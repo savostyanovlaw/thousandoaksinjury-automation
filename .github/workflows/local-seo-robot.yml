@@ -41,50 +41,6 @@ jobs:
             python -c "import base64,pathlib; print('SLC_REVIEW_JSON_B64='+base64.b64encode(pathlib.Path('artifacts/local-seo-robot/report.json').read_bytes()).decode())"
           fi
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: TEMP verify real OIDC token with actual production verifier (to be reverted)
-        if: always()
-        run: |
-          npm install --prefix control-center --ignore-scripts
-          node - <<'NODE'
-          const { pathToFileURL } = require('node:url');
-          (async () => {
-            const { verifyGithubActionsToken } = await import(pathToFileURL(process.cwd()+'/control-center/lib/github-oidc.js'));
-            async function requestToken(audience) {
-              const url = `${process.env.ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${audience}`;
-              const res = await fetch(url, { headers: { Authorization: `bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` } });
-              const body = await res.json();
-              return body.value;
-            }
-            const token = await requestToken('slc-ai-control-ingest');
-            console.log('=== Case 1: real token, correct audience -- should PASS ===');
-            try {
-              const payload = await verifyGithubActionsToken(token);
-              console.log('VERIFIED OK. repository=' + payload.repository + ' run_id=' + payload.run_id + ' workflow=' + payload.workflow + ' ref=' + payload.ref + ' event_name=' + payload.event_name + ' exp=' + payload.exp);
-            } catch (e) { console.log('UNEXPECTED FAILURE: ' + e.message); process.exitCode = 1; }
-
-            console.log('=== Case 2: tampered signature -- should FAIL ===');
-            const parts = token.split('.');
-            const tamperedSig = parts[2].slice(0, -4) + (parts[2].slice(-4) === 'AAAA' ? 'BBBB' : 'AAAA');
-            const tampered = `${parts[0]}.${parts[1]}.${tamperedSig}`;
-            try {
-              await verifyGithubActionsToken(tampered);
-              console.log('UNEXPECTED: tampered token was accepted!');
-              process.exitCode = 1;
-            } catch (e) { console.log('CORRECTLY REJECTED: ' + e.message); }
-
-            console.log('=== Case 3: real token, wrong audience -- should FAIL ===');
-            const wrongAudienceToken = await requestToken('some-unrelated-audience');
-            try {
-              await verifyGithubActionsToken(wrongAudienceToken);
-              console.log('UNEXPECTED: wrong-audience token was accepted!');
-              process.exitCode = 1;
-            } catch (e) { console.log('CORRECTLY REJECTED: ' + e.message); }
-          })();
-          NODE
-
       - name: Notify Control Center of new result
         if: always()
         env:
