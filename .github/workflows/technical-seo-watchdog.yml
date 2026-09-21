@@ -18,6 +18,16 @@ on:
         required: false
         default: false
         type: boolean
+      self_healing_e2e_fixture:
+        description: 'Emit a safe synthetic GREEN e2e_fixture_marker finding to exercise the full autonomous closed loop (detect -> auto-approve -> execute -> verify -> audit) with no owner action'
+        required: false
+        default: false
+        type: boolean
+      self_healing_e2e_force_failure:
+        description: 'With self_healing_e2e_fixture: deliberately fail post-merge verification to exercise the bounded retry/rollback/escalation path instead of success'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -107,6 +117,41 @@ jobs:
               'source_revision':'e2e-fixture','page_title':title,'page_body':body,
               'material_change_reason':'[E2E fixture] Safe synthetic reason for approval-to-Content-Refresher validation.',
               'e2eFixture':True,
+          })
+          r['fixture']=True
+          with open(p,'w',encoding='utf-8') as f:
+            json.dump(r,f,indent=2)
+            f.write(chr(10))
+          PY
+
+      - name: Inject safe self-healing closed-loop E2E fixture
+        if: github.event_name == 'workflow_dispatch' && inputs.self_healing_e2e_fixture == true
+        env:
+          FORCE_FAILURE: ${{ inputs.self_healing_e2e_force_failure }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          p='artifacts/technical-seo-watchdog/report.json'
+          with open(p,encoding='utf-8') as f: r=json.load(f)
+          # A real, unique-per-run marker value (not a fabricated constant)
+          # so post-merge verification proves THIS run's fix landed, not a
+          # stale leftover from an earlier run. e2e_fixture_marker is GREEN
+          # (see control-center/lib/autonomy.js): a fully-green report is
+          # picked up and executed automatically, with no owner approval,
+          # by the same code path that handles a real GREEN finding --
+          # this fixture exists to prove that whole loop, not to bypass it.
+          marker_value = "e2e-" + os.environ.get("GITHUB_RUN_ID", "unknown")
+          r['healthy']=False
+          r.setdefault('findings', [])
+          r['findings'].append({
+              'findingType':'e2e_fixture_marker','check':'e2e_fixture_marker',
+              'title':'[E2E fixture] self-healing closed-loop marker',
+              'summary':'Safe synthetic GREEN finding for the self-healing closed-loop E2E fixture. Touches only a repository-internal marker file (remediation/e2e-fixture-marker.txt); it can never reach production content.',
+              'recommendedAction':'Automatic remediation will write and verify this marker with no owner action.',
+              'url':'',
+              'fixture_marker_value': marker_value,
+              'fixture_force_verification_failure': os.environ.get('FORCE_FAILURE','false'),
+              'e2eFixture': True,
           })
           r['fixture']=True
           with open(p,'w',encoding='utf-8') as f:
