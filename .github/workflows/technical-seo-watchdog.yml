@@ -219,10 +219,27 @@ jobs:
             if [ -z "$OIDC_TOKEN" ]; then
               echo "::warning::Could not obtain a GitHub OIDC token; dashboard-load reconciliation remains as fallback."
             else
+              # Include this run's own already-computed health/finding-count
+              # directly (report.json is right here on disk) so the ingest
+              # endpoint can recognize a genuinely healthy, zero-finding run
+              # and auto-archive it without any owner action -- never a live
+              # re-fetch from this still-running job's own logs, which would
+              # race GitHub's log-finalization for the step that just ran.
+              PAYLOAD=$(python3 - <<'PY'
+          import json, os
+          report = json.load(open("artifacts/technical-seo-watchdog/report.json"))
+          print(json.dumps({
+              "agentId": "technical-seo-watchdog",
+              "runId": os.environ["GITHUB_RUN_ID"],
+              "healthy": bool(report.get("healthy") is True),
+              "findingCount": len(report.get("failures") or []),
+          }))
+          PY
+          )
               curl -sS -f -X POST "$CONTROL_CENTER_URL/api/control/ingest/review-result" \
                 -H "Authorization: Bearer $OIDC_TOKEN" \
                 -H "Content-Type: application/json" \
-                -d "{\"agentId\":\"technical-seo-watchdog\",\"runId\":\"${GITHUB_RUN_ID}\"}" \
+                -d "$PAYLOAD" \
                 || echo "::warning::Control Center ingest call failed; dashboard-load reconciliation remains as fallback."
             fi
           fi
