@@ -41,6 +41,39 @@ export function isReportFullyGreen(items) {
   return items.every((item) => classifyFindingType(item?.findingType || item?.type || item?.check || item?.code) === 'GREEN');
 }
 
+// A report is safe to auto-archive out of Needs Approval (and never worth
+// creating a PENDING approval for at all) only when it affirmatively
+// represents a completed no-action result -- never merely because it has
+// zero "findings". A content artifact (a Video Engine proposal, a Russian
+// localization, an actionable Content Refresher diff) can legitimately have
+// zero items in its `findings` array and still require attorney review, so
+// absence of findings alone is never sufficient. Two independent, real
+// signals this codebase already uses qualify:
+//  - approvalState === 'NOT_REQUIRED': the producing agent's own script
+//    explicitly said no review is needed (content_refresher.py and
+//    russian_language_robot.py already set this exact field for their own
+//    no-action branches; this is the single most authoritative signal,
+//    because it is the agent affirmatively declaring "nothing to review"
+//    rather than an inference this code draws from other fields). Any other
+//    approvalState value (e.g. 'PENDING') means the agent uses this
+//    convention and is NOT declaring a no-action result, so it is never
+//    auto-archived even if it happens to carry zero findings.
+//  - a health-check-style report -- one that never uses the approvalState
+//    convention at all, meaning it never claims to produce a reviewable
+//    artifact -- that affirmatively reports healthy===true or
+//    status==='HEALTHY' with zero findings, and does not explicitly demand
+//    requiresAttorneyReview.
+export function isNoActionReview(reviewResult) {
+  const rr = reviewResult || {};
+  if (String(rr.approvalState || '').toUpperCase() === 'NOT_REQUIRED') return true;
+  if (rr.approvalState !== undefined) return false;
+  if (rr.requiresAttorneyReview === true) return false;
+  const findings = Array.isArray(rr.findings) ? rr.findings : (Array.isArray(rr.failures) ? rr.failures : null);
+  const findingCount = Number.isFinite(Number(rr.findingCount)) ? Number(rr.findingCount) : (Array.isArray(findings) ? findings.length : null);
+  if (findingCount === null || findingCount > 0) return false;
+  return rr.healthy === true || String(rr.status || '').toUpperCase() === 'HEALTHY';
+}
+
 // Decides, for one already-classified-GREEN finding, whether it is safe to
 // dispatch automatic remediation right now: no other attempt already in
 // flight for the same finding, and the finding hasn't exhausted its bounded

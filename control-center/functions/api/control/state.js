@@ -2,12 +2,13 @@ import { loadRegistry } from '../../../lib/registry.js';
 import { requireAuthorizedUser } from '../../../lib/auth.js';
 import { createGitHubAdapter } from '../../../lib/github.js';
 import { buildDashboardState } from '../../../lib/state.js';
-import { listPendingApprovals, listStuckApprovals, ensureRunReviewApproval, ensureControlSchema } from '../../../lib/approval-store.js';
+import { listPendingApprovals, listStuckApprovals, ensureRunReviewApproval, ensureControlSchema, claimCommandIdempotency } from '../../../lib/approval-store.js';
 import { targetHash } from '../../../lib/approvals.js';
 import { errorResponse, jsonResponse } from '../../../lib/http.js';
-import { listAuditEvents } from '../../../lib/audit.js';
+import { listAuditEvents, writeAudit } from '../../../lib/audit.js';
 import { listRemediationJobs, listStuckRemediationJobs } from '../../../lib/remediation-store.js';
 import { maybeAutoRemediateGreenReport } from '../../../lib/auto-remediate.js';
+import { isNoActionReview } from '../../../lib/autonomy.js';
 
 // A single, owner-facing label per remediation job status -- this is the
 // self-healing loop's visible outcome, distinct from (and shown alongside)
@@ -100,11 +101,23 @@ export async function onRequestGet(context){
       const wf=await github.getWorkflowState(agent);
       const run=wf?.lastRun;
       if(wf?.lastSuccess && run?.id){
+        // Safe here (unlike the push-ingest path in ingest/review-result.js):
+        // by the time a dashboard load runs this, the run itself has already
+        // been reported completed by getWorkflowState, so its job logs are
+        // stable and this reconstruction cannot race the still-running job's
+        // own log finalization.
+        const review=await github.getWorkflowRunReview(run.id);
+        if(isNoActionReview(review?.reviewResult)){
+          // Idempotent: repeated dashboard loads while this remains the
+          // agent's latest run must never write a second audit row for it.
+          const claimed=await claimCommandIdempotency(context.env.CONTROL_DB,`review-result:no-action:${agent.id}:${run.id}`,agent.id,'AUTO_ARCHIVE_REVIEW');
+          if(claimed){
+            await writeAudit(context.env.CONTROL_DB,{timestamp:new Date().toISOString(),actor:'dashboard-reconciliation',agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id),autonomy:'GREEN',result:'auto-archived-no-action'});
+          }
+          continue;
+        }
         const payload={agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id)};
         const row=await ensureRunReviewApproval(context.env.CONTROL_DB,{...payload,id:crypto.randomUUID(),payloadHash:await targetHash(payload),status:'PENDING',createdAt:run.createdAt||new Date().toISOString()});
-        // Only for a genuinely new approval (never a dashboard load
-        // re-reconciling a run already processed) -- see
-        // lib/auto-remediate.js for what "fully green" means here.
         if(row) await maybeAutoRemediateGreenReport({approvalRow:row,db:context.env.CONTROL_DB,github});
       }
     }
