@@ -96,29 +96,48 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           if [ ! -f artifacts/content-creator/draft.json ]; then
             echo "No draft produced; skipping Russian-language handoff."
           else
             python3 - <<'PY'
           import json, os, urllib.request
+          from scripts.translate_content import translate_to_russian
           draft=json.load(open("artifacts/content-creator/draft.json"))
           title=draft.get("title") or ""
           body=(draft.get("draft") or "")[:9000]
           if not title or not body:
               print("Draft missing title/body; skipping Russian-language handoff.")
               raise SystemExit(0)
+          # A real translation call, gated entirely on ANTHROPIC_API_KEY being
+          # configured -- never a fabricated draft. Without the key (or on any
+          # translation failure), inputs simply omit localized_title/body, and
+          # the Russian Language Robot's own existing NEEDS_LOCALIZATION /
+          # approvalState=NOT_REQUIRED fallback (see russian_language_robot.py)
+          # auto-archives the run exactly as it always has -- this handoff
+          # cannot regress to a worse state than before this change.
+          localized_title=localized_body=None
+          try:
+              localized_title,localized_body=translate_to_russian(title,body,os.environ.get("ANTHROPIC_API_KEY",""))
+          except Exception as exc:
+              print(f"::warning::Russian translation call failed ({exc}); handing off without a localized draft -- Needs Localization will auto-archive as usual.")
+          inputs={
+              "source_id":f"content-creator:{os.environ.get('GITHUB_RUN_ID','')}",
+              "source_revision":os.environ.get("GITHUB_SHA",""),
+              "title":title,
+              "body":body,
+          }
+          if localized_title and localized_body:
+              inputs["localized_title"]=localized_title
+              inputs["localized_body"]=localized_body
           req=urllib.request.Request(
               f"https://api.github.com/repos/{os.environ['REPO']}/actions/workflows/russian-language-robot.yml/dispatches",
-              data=json.dumps({"ref":"main","inputs":{
-                  "source_id":f"content-creator:{os.environ.get('GITHUB_RUN_ID','')}",
-                  "source_revision":os.environ.get("GITHUB_SHA",""),
-                  "title":title,
-                  "body":body}}).encode(),
+              data=json.dumps({"ref":"main","inputs":inputs}).encode(),
               method="POST",
               headers={"Authorization":f"Bearer {os.environ['GH_TOKEN']}","Accept":"application/vnd.github+json","Content-Type":"application/json"})
           urllib.request.urlopen(req).read()
-          print(json.dumps({"dispatched":"russian-language-robot.yml","title":title}))
+          print(json.dumps({"dispatched":"russian-language-robot.yml","title":title,"localized":bool(localized_title and localized_body)}))
           PY
           fi
 
