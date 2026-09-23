@@ -41,6 +41,9 @@ export async function onRequest(context){
   if(url.pathname==='/api/control/ingest/remediation-result' && request.method==='POST'){
     return context.next();
   }
+  if(url.pathname==='/api/control/maintenance/cleanup-approval-queue' && request.method==='POST'){
+    return context.next();
+  }
 
   if(url.pathname==='/auth/login' && request.method==='GET') return htmlResponse(loginPage());
 
