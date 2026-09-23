@@ -94,32 +94,30 @@ export async function onRequestGet(context){
       }),
       loadGitHubDiagnostics(github)
     ]);
-    // Reconcile successful workflow runs into the owner review queue.
-    // Presentation decides whether a result is actionable; execution remains approval-gated.
-    // This is review-only: approving a result never publishes or executes it.
+    // Push ingestion is primary. Keep dashboard fallback reconciliation bounded:
+    // inspect only successful runs that are not already represented in approvals.
+    // This preserves missed-ingest recovery without re-reading logs for every agent
+    // on every dashboard request.
+    const knownRunIds=new Set(optional.pendingApprovals.filter(a=>a.action==='REVIEW_RESULT' && a.targetType==='workflow_run').map(a=>String(a.targetId)));
     for(const agent of agents){
       const wf=await github.getWorkflowState(agent);
       const run=wf?.lastRun;
-      if(wf?.lastSuccess && run?.id){
-        // Safe here (unlike the push-ingest path in ingest/review-result.js):
-        // by the time a dashboard load runs this, the run itself has already
-        // been reported completed by getWorkflowState, so its job logs are
-        // stable and this reconstruction cannot race the still-running job's
-        // own log finalization.
-        const review=await github.getWorkflowRunReview(run.id);
-        if(isNoActionReview(review?.reviewResult)){
-          // Idempotent: repeated dashboard loads while this remains the
-          // agent's latest run must never write a second audit row for it.
-          const claimed=await claimCommandIdempotency(context.env.CONTROL_DB,`review-result:no-action:${agent.id}:${run.id}`,agent.id,'AUTO_ARCHIVE_REVIEW');
-          if(claimed){
-            await writeAudit(context.env.CONTROL_DB,{timestamp:new Date().toISOString(),actor:'dashboard-reconciliation',agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id),autonomy:'GREEN',result:'auto-archived-no-action'});
-          }
-          continue;
-        }
-        const payload={agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id)};
-        const row=await ensureRunReviewApproval(context.env.CONTROL_DB,{...payload,id:crypto.randomUUID(),payloadHash:await targetHash(payload),status:'PENDING',createdAt:run.createdAt||new Date().toISOString()});
-        if(row) await maybeAutoRemediateGreenReport({approvalRow:row,db:context.env.CONTROL_DB,github});
+      if(!wf?.lastSuccess || !run?.id || knownRunIds.has(String(run.id))) continue;
+      const review=await github.getWorkflowRunReview(run.id);
+      const rr=review?.reviewResult;
+      const findings=Array.isArray(rr?.findings)?rr.findings:[];
+      const findingCount=Number.isFinite(Number(rr?.findingCount))?Number(rr.findingCount):findings.length;
+      const status=String(rr?.status||'').toUpperCase();
+      const recommendation=String(rr?.recommendedAction||'').toUpperCase();
+      const noAction=((status==='HEALTHY' || rr?.healthy===true) && findingCount===0 && (!recommendation || recommendation==='NO_ACTION' || recommendation==='AUTO_ARCHIVE'));
+      if(noAction){
+        const priorAudit=(optional.auditEvents||[]).some(e=>e.agentId===agent.id && e.action==='REVIEW_RESULT' && String(e.targetId)===String(run.id) && e.result==='auto-archived-no-action');
+        if(!priorAudit) await writeAudit(context.env.CONTROL_DB,{timestamp:new Date().toISOString(),actor:'system:dashboard-reconciliation',agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id),autonomy:'GREEN',result:'auto-archived-no-action'});
+        continue;
       }
+      const payload={agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id)};
+      const row=await ensureRunReviewApproval(context.env.CONTROL_DB,{...payload,id:crypto.randomUUID(),payloadHash:await targetHash(payload),status:'PENDING',createdAt:run.createdAt||new Date().toISOString()});
+      if(row) await maybeAutoRemediateGreenReport({approvalRow:row,db:context.env.CONTROL_DB,github});
     }
     const reconciledApprovals=await listPendingApprovals(context.env.CONTROL_DB);
     const state=await buildDashboardState({agents,github,pendingApprovals:reconciledApprovals,auditEvents:optional.auditEvents});
