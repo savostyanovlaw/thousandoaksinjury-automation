@@ -4,6 +4,34 @@ function headers(token){
   if(typeof token==='string' && token.trim()) out.Authorization=`Bearer ${token.trim()}`;
   return out;
 }
+// GitHub's job-logs endpoint responds with a 302 to a pre-signed Azure Blob
+// Storage URL that needs (and accepts) no Authorization header of its own --
+// the signature lives in the URL's own query string. Cloudflare Workers'
+// fetch(), unlike a browser, does NOT strip the original request's headers
+// on a cross-origin redirect when redirect:'follow' is used, so the GitHub
+// bearer token was being replayed against Azure on every hop. Confirmed live
+// in production: this silently failed real job-log fetches (Azure rejects
+// the extra Authorization header), starving getWorkflowRunReview of a
+// review it should have found, and no test exercised an actual redirect
+// response to catch it. Fetching redirects manually and dropping every
+// header but Accept/User-Agent after the first hop keeps the GitHub
+// credential scoped to api.github.com only.
+async function fetchFollowingRedirectsWithoutAuth(fetchImpl,url,initialHeaders){
+  let target=url;
+  let requestHeaders=initialHeaders;
+  for(let hop=0;hop<5;hop++){
+    const res=await fetchImpl(target,{headers:requestHeaders,redirect:'manual'});
+    if(res.status>=300 && res.status<400){
+      const location=res.headers?.get?.('location');
+      if(!location) return res;
+      target=new URL(location,target).toString();
+      requestHeaders={Accept:'*/*'};
+      continue;
+    }
+    return res;
+  }
+  return fetchImpl(target,{headers:requestHeaders});
+}
 async function credentialFingerprint(token){
   if(typeof token!=='string' || !token.trim()) return {credentialPresent:false,credentialLength:0,credentialType:'none',credentialFingerprint:''};
   const value=token.trim();
@@ -193,7 +221,7 @@ ${x.body||''}`.toLowerCase().includes(String(marker).toLowerCase()))
         reviewResult=null;
         for(const job of (jobsData?.jobs||[])){
           try{
-            const res=await fetchImpl(`https://api.github.com/repos/${REPO}/actions/jobs/${job.id}/logs`,{headers:headers(token),redirect:'follow'});
+            const res=await fetchFollowingRedirectsWithoutAuth(fetchImpl,`https://api.github.com/repos/${REPO}/actions/jobs/${job.id}/logs`,headers(token));
             if(!res.ok) continue;
             const log=await res.text();
             const matches=[...log.matchAll(/SLC_REVIEW_JSON_B64=([A-Za-z0-9+/=]+)/g)];
