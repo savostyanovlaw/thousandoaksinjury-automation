@@ -156,6 +156,38 @@ test('cleanupApprovalQueue: a genuine actionable finding is left PENDING and unt
   assert.equal(pending[0].id,'ap-genuine');
 });
 
+// Regression: a live production maintenance run classified content-refresher
+// run 35827038792 as GENUINE_OWNER_DECISION twice in a row despite its real,
+// independently-fetched job log carrying approvalState:"NOT_REQUIRED" -- a
+// case isNoActionReview() already handles correctly in isolation. Diagnosing
+// this from production alone (no exception, no log output) was impossible,
+// so each result row now records whether a live review fetch was attempted
+// and what it found: 'found' (a reviewResult came back, whatever it says),
+// 'no-marker-found' (the fetch succeeded but no SLC_REVIEW_JSON_B64 marker
+// was ever found in any of the run's job logs), or 'error:<message>' (the
+// fetch itself threw). This never changes classification -- it is purely
+// visibility into which of those three cases produced a given GENUINE.
+test('cleanupApprovalQueue: a result row records whether a live review fetch was attempted and what it found',async()=>{
+  const db=createSqliteD1();
+  const {ensureControlSchema,listPendingApprovals}=await approvalStore();
+  const {cleanupApprovalQueue}=await queueCleanup();
+  await ensureControlSchema(db);
+  await seedApproval(db,{id:'ap-found',agentId:'ctr-optimizer',targetId:'900100',createdAt:'2026-09-23T00:00:00Z'});
+  await seedApproval(db,{id:'ap-no-marker',agentId:'ctr-optimizer',targetId:'900101',createdAt:'2026-09-23T00:00:00Z'});
+  await seedApproval(db,{id:'ap-error',agentId:'ctr-optimizer',targetId:'900102',createdAt:'2026-09-23T00:00:00Z'});
+  const github={async getWorkflowRunReview(runId){
+    if(String(runId)==='900100') return {reviewResult:{findingCount:2}};
+    if(String(runId)==='900101') return {reviewResult:null};
+    throw new Error('GitHub 502');
+  }};
+  const result=await cleanupApprovalQueue({db,github,agents:AGENTS,listPendingApprovals,getVideoJobStatus:async()=>undefined});
+  const byId=Object.fromEntries(result.results.map(r=>[r.approvalId,r]));
+  assert.equal(byId['ap-found'].fetchDiagnostic,'found');
+  assert.equal(byId['ap-no-marker'].fetchDiagnostic,'no-marker-found');
+  assert.equal(byId['ap-error'].fetchDiagnostic,'error:GitHub 502');
+  assert.equal((await listPendingApprovals(db)).length,3,'a diagnostic field never changes any classification outcome');
+});
+
 // An unknown/legacy agent's approval is cleaned up too.
 test('cleanupApprovalQueue: an approval for an agent no longer in the registry is INVALID_LEGACY_APPROVAL and transitioned out',async()=>{
   const db=createSqliteD1();

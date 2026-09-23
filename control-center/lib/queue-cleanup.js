@@ -92,14 +92,17 @@ export async function cleanupApprovalQueue({ db, github, agents, listPendingAppr
     let alreadyAutoArchived = false;
     let reviewResult;
     let videoJobStatus;
+    let fetchDiagnostic;
     if (agentKnown && approval.action === 'REVIEW_RESULT' && approval.targetType === 'workflow_run') {
       alreadyAutoArchived = await hasAuditResult(db, { agentId: approval.agentId, action: 'REVIEW_RESULT', targetId: approval.targetId, result: 'auto-archived-no-action' });
       if (!alreadyAutoArchived && !isDuplicate && fetchReviewResults) {
         try {
           const review = await github.getWorkflowRunReview(approval.targetId);
           reviewResult = review?.reviewResult;
-        } catch {
+          fetchDiagnostic = reviewResult ? 'found' : 'no-marker-found';
+        } catch (err) {
           reviewResult = undefined;
+          fetchDiagnostic = `error:${String(err && err.message || err).slice(0, 200)}`;
         }
       }
     }
@@ -136,7 +139,9 @@ export async function cleanupApprovalQueue({ db, github, agents, listPendingAppr
         // Never an error: this is exactly what idempotency looks like.
       }
     }
-    results.push({ approvalId: approval.id, agentId: approval.agentId, targetType: approval.targetType, targetId: approval.targetId, classification, transitioned });
+    const resultRow = { approvalId: approval.id, agentId: approval.agentId, targetType: approval.targetType, targetId: approval.targetId, classification, transitioned };
+    if (fetchDiagnostic) resultRow.fetchDiagnostic = fetchDiagnostic;
+    results.push(resultRow);
   }
   const summary = {};
   for (const r of results) summary[r.classification] = (summary[r.classification] || 0) + 1;
