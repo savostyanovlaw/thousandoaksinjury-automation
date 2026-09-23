@@ -97,3 +97,21 @@ test('listStuckRemediationJobs finds a DISPATCHED/MERGED job past the threshold 
   assert.ok(!ids.includes(fresh.id),'a recently-updated job must not be reported stuck');
   assert.ok(!ids.includes(done.id),'a terminal VERIFIED job must never be reported stuck regardless of age');
 });
+
+test('listStuckRemediationJobs never flags a YELLOW job stuck DISPATCHED -- that is its normal resting state awaiting a human PR merge -- but still flags an old GREEN one',async()=>{
+  const {ensureRemediationSchema,createRemediationJob,updateRemediationJob,listStuckRemediationJobs}=await remediationStore();
+  const db=createSqliteD1();
+  await ensureRemediationSchema(db);
+  const yellow=baseJob({autonomy:'YELLOW',remediationAgentId:'content-page-editor'});
+  await createRemediationJob(db,yellow);
+  await updateRemediationJob(db,yellow.id,'DISPATCHED');
+  db._raw.exec(`UPDATE remediation_jobs SET updated_at='2020-01-01T00:00:00Z' WHERE id='${yellow.id}'`);
+  const green=baseJob({autonomy:'GREEN'});
+  await createRemediationJob(db,green);
+  await updateRemediationJob(db,green.id,'DISPATCHED');
+  db._raw.exec(`UPDATE remediation_jobs SET updated_at='2020-01-01T00:00:00Z' WHERE id='${green.id}'`);
+  const results=await listStuckRemediationJobs(db,20);
+  const ids=results.map(r=>r.id);
+  assert.ok(!ids.includes(yellow.id),'a YELLOW job left DISPATCHED is an open PR awaiting a human merge, not a stuck condition');
+  assert.ok(ids.includes(green.id),'a GREEN job stuck at DISPATCHED never reached its own automatic merge -- a real problem');
+});
