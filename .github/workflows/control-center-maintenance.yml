@@ -1,0 +1,57 @@
+name: Control Center Maintenance
+
+# On-demand maintenance actions against the Control Center's own database,
+# run from a GitHub Actions runner (which has ordinary internet access)
+# because the maintenance endpoint is authenticated with a GitHub Actions
+# OIDC identity token -- the same pattern every agent's own "Notify Control
+# Center" ingest step already uses, with its own dedicated OIDC audience
+# (see github-oidc.js) so an ingest-scoped token can never trigger a
+# maintenance action, and vice versa.
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Maintenance action to run
+        required: true
+        type: choice
+        options:
+          - cleanup-approval-queue
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Run maintenance action against the Control Center
+        env:
+          CONTROL_CENTER_URL: ${{ vars.CONTROL_CENTER_URL }}
+          ACTION: ${{ inputs.action }}
+        run: |
+          if [ -z "$CONTROL_CENTER_URL" ]; then
+            echo "::error::CONTROL_CENTER_URL not configured; cannot run maintenance."
+            exit 1
+          fi
+          OIDC_TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=slc-ai-control-maintenance" | python3 -c "import json,sys; print(json.load(sys.stdin).get('value',''))")
+          if [ -z "$OIDC_TOKEN" ]; then
+            echo "::error::Could not obtain a GitHub OIDC token."
+            exit 1
+          fi
+          curl -sS -f -X POST "$CONTROL_CENTER_URL/api/control/maintenance/$ACTION" \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            -o maintenance-result.json
+          python3 -m json.tool maintenance-result.json
+
+      - name: Upload maintenance result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: control-center-maintenance-result
+          path: maintenance-result.json
+          if-no-files-found: warn
+          retention-days: 90

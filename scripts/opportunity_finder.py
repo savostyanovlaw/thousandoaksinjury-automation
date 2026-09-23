@@ -97,7 +97,7 @@ def analyze(base_url, paths):
     findings=[proposal(p["url"],x) for p in pages for x in p.get("opportunities",[])]
     findings.sort(key=lambda f: ({"HIGH":0,"MEDIUM":1,"LOW":2}[f["priority"]],f["url"],f["type"]))
     status="NEEDS ATTENTION" if any(f["type"]=="fetch_failed" for f in findings) else "HEALTHY"
-    return {"agent":"opportunity-finder","mode":"PROPOSAL_ONLY","publishAllowed":False,"requiresAttorneyReview":True,"baseUrl":base,"pages":pages,"findingCount":len(findings),"findings":findings,"status":status}
+    return {"agent":"opportunity-finder","mode":"PROPOSAL_ONLY","publishAllowed":False,"requiresAttorneyReview":len(findings)>0,"baseUrl":base,"pages":pages,"findingCount":len(findings),"findings":findings,"status":status}
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument("--base-url",default="https://thousandoaksinjury.com"); ap.add_argument("--output",required=True); ap.add_argument("--paths",nargs="*",default=["/","/agoura-hills/","/westlake-village/","/oak-park/","/newbury-park/","/camarillo/","/simi-valley/","/ru/"])

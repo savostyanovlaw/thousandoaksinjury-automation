@@ -18,6 +18,11 @@ export const GITHUB_OIDC_ISSUER = 'https://token.actions.githubusercontent.com';
 // this endpoint trusts, not credentials. Safe to read directly from code.
 export const INGEST_AUDIENCE = 'slc-ai-control-ingest';
 export const INGEST_REPOSITORY = 'savostyanovlaw/thousandoaksinjury-automation';
+// A distinct audience for maintenance operations (the audited approval-
+// queue cleanup): least privilege -- a token minted for ingesting one
+// agent's review result should never also authorize a queue-wide cleanup,
+// even though both come from the same trusted repository.
+export const MAINTENANCE_AUDIENCE = 'slc-ai-control-maintenance';
 
 let cachedJwks = null;
 function defaultJwks() {

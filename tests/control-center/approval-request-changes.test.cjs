@@ -175,3 +175,29 @@ test('applyApprovalDecision audits REQUEST_CHANGES distinctly from REJECT, with 
   assert.ok(match,'a changes-requested audit event must exist');
   assert.equal(match.result,'changes-requested');
 });
+
+// Superseded revision: once the owner requests changes on a review, the
+// revision-bound redispatch creates a genuinely new approval for the same
+// logical item -- the OLD revision must never linger in Needs Approval
+// alongside the new one (it is already terminal via decideApproval's own
+// atomic claim), and the NEW revision must be the one actually reviewable.
+test('a superseded revision (old CHANGES_REQUESTED approval) is absent from Needs Approval; the new revision it produced remains PENDING',async()=>{
+  const {executeApprovalDecision}=await approvalsModule();
+  const {ensureControlSchema,insertApproval,listPendingApprovals}=await approvalStore();
+  const db=createSqliteD1();
+  await ensureControlSchema(db);
+  await insertApproval(db,{id:'ap-rev1',agentId:'russian-language-robot',action:'REVIEW_RESULT',targetType:'workflow_run',targetId:'950001',targetRevision:'950001',payloadHash:'h1',createdAt:'2026-01-01T00:00:00Z',revision:1});
+  const record={id:'ap-rev1',agentId:'russian-language-robot',action:'REVIEW_RESULT',targetType:'workflow_run',targetId:'950001',status:'PENDING'};
+  const github=githubStub({reviewResult:{localizationRevision:1,sourceId:'x',sourceRevision:'x',sourceTitle:'t',sourceBody:'b',localizedTitle:'lt',localizedBody:'lb'},dispatchAgentRevision:async()=>({ok:true})});
+  await executeApprovalDecision({record,decision:'REQUEST_CHANGES',user:{email:'owner@example.com'},db,github,feedback:'Please revise.'});
+  // The real ingest pipeline creates the actual "revision 2" approval row
+  // once the redispatched run completes -- simulated here directly, exactly
+  // as ensureRunReviewApproval would produce it.
+  await insertApproval(db,{id:'ap-rev2',agentId:'russian-language-robot',action:'REVIEW_RESULT',targetType:'workflow_run',targetId:'950002',targetRevision:'950002',payloadHash:'h2',createdAt:'2026-01-01T00:10:00Z',revision:2,parentApprovalId:'ap-rev1'});
+  const pending=await listPendingApprovals(db);
+  assert.equal(pending.find(a=>a.id==='ap-rev1'),undefined,'the superseded (old) revision must be absent from Needs Approval');
+  const current=pending.find(a=>a.id==='ap-rev2');
+  assert.ok(current,'the new revision must remain PENDING');
+  assert.equal(current.revision,2);
+  assert.equal(current.parentApprovalId,'ap-rev1');
+});
