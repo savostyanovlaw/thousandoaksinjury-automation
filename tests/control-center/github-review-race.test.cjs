@@ -86,6 +86,34 @@ test('getWorkflowRunReview follows the real GitHub job-logs redirect to Azure Bl
   assert.equal(jobLogsCall.headers.Authorization,'Bearer real-github-token','the GitHub API call itself must still be authenticated');
 });
 
+// Regression: cleanupApprovalQueue processes every PENDING approval in one
+// Cloudflare Worker invocation, which has a hard cap on outbound
+// subrequests; the real-time ingest path's defaults (4 retry attempts,
+// always fetching the artifacts list) were confirmed live in production to
+// exhaust that budget partway through a batch of ~31 approvals, after which
+// every remaining approval's getWorkflowRunReview call threw "Too many
+// subrequests by single Worker invocation" and was silently misclassified.
+// These options let a batch caller opt into the minimal-subrequest variant
+// (queue-cleanup.js does, since every run it looks at already finished --
+// no ingest race is possible -- and it never reads .artifacts).
+test('getWorkflowRunReview: maxAttempts:1 makes exactly one attempt with no retry sleep, even with no marker found',async()=>{
+  const {createGitHubAdapter}=await m();
+  let jobLogCalls=0;
+  const fetchImpl=async(url)=>{
+    if(url.includes('/logs')){ jobLogCalls++; return new Response('never has the marker',{status:200}); }
+    if(url.includes('/jobs')) return new Response(JSON.stringify({jobs:[{id:1}]}),{status:200,headers:{'content-type':'application/json'}});
+    if(url.includes('/actions/runs/50')) return new Response(JSON.stringify({id:50,status:'completed',conclusion:'success',created_at:'x',updated_at:'x',html_url:'u',head_sha:'s',event:'push'}),{status:200,headers:{'content-type':'application/json'}});
+    throw new Error('unexpected url (artifacts must not be fetched) '+url);
+  };
+  let sleepCount=0;
+  const gh=createGitHubAdapter({token:'x',fetchImpl,sleepImpl:async()=>{sleepCount++;}});
+  const review=await gh.getWorkflowRunReview(50,{maxAttempts:1,fetchArtifacts:false});
+  assert.equal(review.reviewResult,null);
+  assert.equal(jobLogCalls,1,'no retry -- exactly one attempt');
+  assert.equal(sleepCount,0);
+  assert.deepEqual(review.artifacts,[],'fetchArtifacts:false must never call the artifacts endpoint');
+});
+
 test('getWorkflowRunReview needs no retry when the marker is already present on the first read',async()=>{
   const {createGitHubAdapter}=await m();
   let jobLogCalls=0;

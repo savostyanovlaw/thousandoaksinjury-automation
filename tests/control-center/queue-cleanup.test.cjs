@@ -188,6 +188,32 @@ test('cleanupApprovalQueue: a result row records whether a live review fetch was
   assert.equal((await listPendingApprovals(db)).length,3,'a diagnostic field never changes any classification outcome');
 });
 
+// Regression: the real root cause of the production incident above wasn't
+// the classification logic at all -- it was Cloudflare Workers' hard cap on
+// outbound subrequests per invocation. This loop processes every PENDING
+// approval in ONE invocation; getWorkflowRunReview's real-time-ingest
+// defaults (4 retry attempts, plus an artifacts fetch this classifier never
+// uses) multiply the subrequest cost per approval several times over, so a
+// queue of just a few dozen items exhausted the budget partway through and
+// every approval after that point got "Too many subrequests by single
+// Worker invocation" from getWorkflowRunReview, caught by the per-approval
+// try/catch, and silently fell back to GENUINE_OWNER_DECISION -- with a 200
+// response and no visible error anywhere. This locks in that the batch path
+// always asks for the cheap variant.
+test('cleanupApprovalQueue: calls getWorkflowRunReview with maxAttempts:1 and fetchArtifacts:false to conserve the batch invocation\'s subrequest budget',async()=>{
+  const db=createSqliteD1();
+  const {ensureControlSchema,listPendingApprovals}=await approvalStore();
+  const {cleanupApprovalQueue}=await queueCleanup();
+  await ensureControlSchema(db);
+  await seedApproval(db,{id:'ap-budget',agentId:'ctr-optimizer',targetId:'900200',createdAt:'2026-09-23T00:00:00Z'});
+  const calls=[];
+  const github={async getWorkflowRunReview(runId,options){ calls.push({runId,options}); return {reviewResult:{findingCount:1}}; }};
+  await cleanupApprovalQueue({db,github,agents:AGENTS,listPendingApprovals,getVideoJobStatus:async()=>undefined});
+  assert.equal(calls.length,1);
+  assert.equal(String(calls[0].runId),'900200');
+  assert.deepEqual(calls[0].options,{maxAttempts:1,fetchArtifacts:false});
+});
+
 // An unknown/legacy agent's approval is cleaned up too.
 test('cleanupApprovalQueue: an approval for an agent no longer in the registry is INVALID_LEGACY_APPROVAL and transitioned out',async()=>{
   const db=createSqliteD1();
