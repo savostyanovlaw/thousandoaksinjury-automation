@@ -97,7 +97,15 @@ export async function cleanupApprovalQueue({ db, github, agents, listPendingAppr
       alreadyAutoArchived = await hasAuditResult(db, { agentId: approval.agentId, action: 'REVIEW_RESULT', targetId: approval.targetId, result: 'auto-archived-no-action' });
       if (!alreadyAutoArchived && !isDuplicate && fetchReviewResults) {
         try {
-          const review = await github.getWorkflowRunReview(approval.targetId);
+          // maxAttempts:1 / fetchArtifacts:false -- this loop processes
+          // every PENDING approval in one Worker invocation, which has a
+          // hard cap on outbound subrequests. Every run here already
+          // finished (no ingest race to retry for) and the artifacts list
+          // is never used by this classifier, so the real-time ingest
+          // path's defaults (4 attempts, fetch artifacts) would burn
+          // several times the necessary subrequest budget per approval and
+          // starve later approvals in the same batch of any budget at all.
+          const review = await github.getWorkflowRunReview(approval.targetId, { maxAttempts: 1, fetchArtifacts: false });
           reviewResult = review?.reviewResult;
           fetchDiagnostic = reviewResult ? 'found' : 'no-marker-found';
         } catch (err) {

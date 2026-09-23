@@ -197,7 +197,7 @@ ${x.body||''}`.toLowerCase().includes(String(marker).toLowerCase()))
       await json(`https://api.github.com/repos/${REPO}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs})});
       return {ok:true,workflow};
     },
-    async getWorkflowRunReview(runId){
+    async getWorkflowRunReview(runId,{maxAttempts=4,fetchArtifacts=true}={}){
       const id=Number(runId);
       if(!Number.isFinite(id)) throw new Error('Invalid workflow run');
       // A producing workflow's own "Notify Control Center" step calls the
@@ -211,12 +211,25 @@ ${x.body||''}`.toLowerCase().includes(String(marker).toLowerCase()))
       // race without meaningfully slowing down the real "no review yet"
       // case, since a genuinely absent marker still resolves after the
       // same fixed number of attempts.
-      const maxAttempts=4;
+      //
+      // Both maxAttempts and fetchArtifacts are overridable because a
+      // single Cloudflare Worker invocation has a hard cap on outbound
+      // subrequests. queue-cleanup.js calls this in a loop over every
+      // PENDING approval in ONE invocation, and every run it looks at has
+      // already finished (no ingest race is possible, so retries can only
+      // ever waste budget re-confirming "still no marker") and never uses
+      // the artifacts list at all. Confirmed live in production: with the
+      // defaults, cleanupApprovalQueue exhausted its subrequest budget
+      // partway through a 31-approval queue and every approval after that
+      // point silently fell back to the conservative default classification
+      // (GENUINE_OWNER_DECISION) via getWorkflowRunReview throwing "Too many
+      // subrequests by single Worker invocation" -- caught per-approval, so
+      // the whole request still returned 200 with no visible error.
       const retryDelayMs=1500;
       let run,artifactsData,jobsData,reviewResult=null;
       for(let attempt=1;attempt<=maxAttempts;attempt++){
         run=await json(`https://api.github.com/repos/${REPO}/actions/runs/${id}`);
-        artifactsData=await json(`https://api.github.com/repos/${REPO}/actions/runs/${id}/artifacts?per_page=100`);
+        artifactsData=fetchArtifacts?await json(`https://api.github.com/repos/${REPO}/actions/runs/${id}/artifacts?per_page=100`):null;
         jobsData=await json(`https://api.github.com/repos/${REPO}/actions/runs/${id}/jobs?per_page=100`);
         reviewResult=null;
         for(const job of (jobsData?.jobs||[])){
