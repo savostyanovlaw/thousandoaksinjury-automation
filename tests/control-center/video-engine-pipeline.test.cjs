@@ -218,17 +218,21 @@ test('approving a video-engine script proposal starts rendering instead of the g
   assert.ok(videoJob,'a real video_job row must exist, never a silent no-op');
 });
 
-test('approving a PUBLISH_VIDEO approval fails with an explicit, honest message (stage 2 not yet wired) rather than a silent no-op or a misleading autonomy error',async()=>{
+// Stage 2 (Approve & Publish -> YouTube) is now wired -- see
+// video-engine-publish.test.cjs for its full coverage. This only checks
+// that approving a PUBLISH_VIDEO approval for a video_job that does not
+// actually exist fails honestly rather than silently claiming success.
+test('approving a PUBLISH_VIDEO approval for a nonexistent video job fails explicitly rather than silently claiming success',async()=>{
   const {executeApprovalDecision}=await approvalsModule();
   const {ensureControlSchema,insertApproval}=await approvalStore();
   const db=createSqliteD1();
   await ensureControlSchema(db);
-  await insertApproval(db,{id:'ap-publish-1',agentId:'video-engine',action:'PUBLISH_VIDEO',targetType:'video_job',targetId:'vj-1',targetRevision:'vj-1',payloadHash:'h',createdAt:new Date().toISOString()});
-  const record={id:'ap-publish-1',agentId:'video-engine',action:'PUBLISH_VIDEO',targetType:'video_job',targetId:'vj-1',status:'PENDING'};
-  await assert.rejects(
-    ()=>executeApprovalDecision({record,decision:'APPROVE',user:{email:'owner@example.com'},db,github:{}}),
-    /not yet available/
-  );
+  await insertApproval(db,{id:'ap-publish-1',agentId:'video-engine',action:'PUBLISH_VIDEO',targetType:'video_job',targetId:'vj-does-not-exist',targetRevision:'vj-does-not-exist',payloadHash:'h',createdAt:new Date().toISOString()});
+  const record={id:'ap-publish-1',agentId:'video-engine',action:'PUBLISH_VIDEO',targetType:'video_job',targetId:'vj-does-not-exist',status:'PENDING'};
+  const result=await executeApprovalDecision({record,decision:'APPROVE',user:{email:'owner@example.com'},db,github:{},youtube:{configured:true}});
+  assert.equal(result.ok,false);
+  assert.equal(result.failed,true);
+  assert.match(result.error,/Video job not found/);
 });
 
 // ---------- review.js: the video job is visible in Final Review ----------
