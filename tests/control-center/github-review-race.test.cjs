@@ -52,6 +52,40 @@ test('getWorkflowRunReview gives up after bounded retries rather than retrying f
   assert.equal(sleepCount,3);
 });
 
+test('getWorkflowRunReview follows the real GitHub job-logs redirect to Azure Blob Storage without replaying the GitHub bearer token onto it',async()=>{
+  // GitHub's job-logs endpoint really responds 302 to a pre-signed Azure
+  // Blob Storage URL. Confirmed live in production: Cloudflare Workers'
+  // fetch (unlike a browser) forwards the original request's headers,
+  // including Authorization, across that cross-origin redirect when
+  // redirect:'follow' is used -- Azure then rejects the extra Authorization
+  // header, so the real review marker (present in the real log) was never
+  // found. No earlier test simulated an actual redirect response, so this
+  // never surfaced until a live production run.
+  const {createGitHubAdapter}=await m();
+  const calls=[];
+  const fetchImpl=async(url,opts={})=>{
+    calls.push({url:String(url),headers:{...(opts.headers||{})}});
+    if(String(url).includes('/actions/jobs/1/logs')){
+      return new Response(null,{status:302,headers:{location:'https://productionresultssa.blob.core.windows.net/actions-results/fake?sig=abc'}});
+    }
+    if(String(url).includes('blob.core.windows.net')){
+      return new Response('SLC_REVIEW_JSON_B64='+Buffer.from(JSON.stringify({approvalState:'NOT_REQUIRED'})).toString('base64'),{status:200});
+    }
+    if(String(url).includes('/artifacts')) return new Response(JSON.stringify({artifacts:[]}),{status:200,headers:{'content-type':'application/json'}});
+    if(String(url).includes('/jobs')) return new Response(JSON.stringify({jobs:[{id:1}]}),{status:200,headers:{'content-type':'application/json'}});
+    if(String(url).includes('/actions/runs/11')) return new Response(JSON.stringify({id:11,status:'completed',conclusion:'success',created_at:'x',updated_at:'x',html_url:'u',head_sha:'s',event:'workflow_dispatch'}),{status:200,headers:{'content-type':'application/json'}});
+    throw new Error('unexpected url '+url);
+  };
+  const gh=createGitHubAdapter({token:'real-github-token',fetchImpl,sleepImpl:async()=>{}});
+  const review=await gh.getWorkflowRunReview(11);
+  assert.equal(review.reviewResult.approvalState,'NOT_REQUIRED','the marker on the far side of the redirect must be found and parsed');
+  const blobCall=calls.find(c=>c.url.includes('blob.core.windows.net'));
+  assert.ok(blobCall,'the redirect target must actually be fetched');
+  assert.equal(blobCall.headers.Authorization,undefined,'the GitHub bearer token must never be replayed onto the Azure Blob Storage redirect target');
+  const jobLogsCall=calls.find(c=>c.url.includes('/actions/jobs/1/logs'));
+  assert.equal(jobLogsCall.headers.Authorization,'Bearer real-github-token','the GitHub API call itself must still be authenticated');
+});
+
 test('getWorkflowRunReview needs no retry when the marker is already present on the first read',async()=>{
   const {createGitHubAdapter}=await m();
   let jobLogCalls=0;
