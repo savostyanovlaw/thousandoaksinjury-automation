@@ -63,7 +63,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           mkdir -p artifacts/video-engine
-          python3 scripts/video_engine_daily.py \
+          python3 -m scripts.video_engine_daily \
             --output artifacts/video-engine/package.json \
             --source-id "video-engine-daily:${GITHUB_RUN_ID}" \
             --opportunity-report artifacts/video-engine/opportunity-report.json
