@@ -57,10 +57,28 @@ jobs:
             if [ -z "$OIDC_TOKEN" ]; then
               echo "::warning::Could not obtain a GitHub OIDC token; dashboard-load reconciliation remains as fallback."
             else
+              # Include this run's own already-computed status/finding-count
+              # directly (report.json is right here on disk) so the ingest
+              # endpoint can recognize a genuinely healthy, zero-finding run
+              # and auto-archive it without any owner action -- a bare
+              # {agentId,runId} body can never do this (isNoActionReview has
+              # nothing to evaluate), which is why every real HEALTHY run
+              # was landing in Needs Approval instead of Audit/History.
+              PAYLOAD=$(python3 - <<'PY'
+          import json, os
+          report = json.load(open("artifacts/opportunity-finder/report.json"))
+          print(json.dumps({
+              "agentId": "opportunity-finder",
+              "runId": os.environ["GITHUB_RUN_ID"],
+              "healthy": bool(report.get("status") == "HEALTHY"),
+              "findingCount": int(report.get("findingCount") or 0),
+          }))
+          PY
+          )
               curl -sS -f -X POST "$CONTROL_CENTER_URL/api/control/ingest/review-result" \
                 -H "Authorization: Bearer $OIDC_TOKEN" \
                 -H "Content-Type: application/json" \
-                -d "{\"agentId\":\"opportunity-finder\",\"runId\":\"${GITHUB_RUN_ID}\"}" \
+                -d "$PAYLOAD" \
                 || echo "::warning::Control Center ingest call failed; dashboard-load reconciliation remains as fallback."
             fi
           fi
