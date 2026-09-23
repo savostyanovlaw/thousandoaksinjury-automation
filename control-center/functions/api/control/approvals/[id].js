@@ -43,21 +43,34 @@ export async function executeApprovalDecision({record,decision,user,db,github}){
       const findings=Array.isArray(r.findings)?r.findings:(Array.isArray(r.failures)?r.failures:[]);
       const actionable=findings.length?findings:[r];
       const jobs=[];
-      const route=(type)=>({
-        title:'technical-seo-fixer',meta_description:'technical-seo-fixer',canonical:'technical-seo-fixer',
-        broken_link:'technical-seo-fixer',redirect:'technical-seo-fixer',sitemap:'technical-seo-fixer',
-        robots:'technical-seo-fixer',schema:'technical-seo-fixer',structured_data:'technical-seo-fixer',
-        content_stale:'content-refresher'
-      }[String(type||'').toLowerCase()]|| (record.agentId==='technical-seo-watchdog'?'technical-seo-fixer':null));
+      // Content Refresher's OWN review-result findings ({page,issue,why,risk,
+      // diff:{before,after},sources}) carry no findingType/type/check/code at
+      // all -- they are not a technical-SEO-style keyed finding, they are
+      // already the fully-formed, attorney-reviewed change itself. Routing
+      // them through the type-keyed map below (which exists to classify a
+      // Technical SEO Watchdog finding) always missed and fell through to
+      // remediationAgentId=null -> BLOCKED, so approving a Content Refresher
+      // draft looked successful (ok:true) but silently did nothing. This is
+      // checked first, by source agent, before the type-keyed lookup that
+      // only ever applies to a DIFFERENT agent's finding.
+      const route=(type,agentId)=>{
+        if(agentId==='content-refresher') return 'content-page-editor';
+        return {
+          title:'technical-seo-fixer',meta_description:'technical-seo-fixer',canonical:'technical-seo-fixer',
+          broken_link:'technical-seo-fixer',redirect:'technical-seo-fixer',sitemap:'technical-seo-fixer',
+          robots:'technical-seo-fixer',schema:'technical-seo-fixer',structured_data:'technical-seo-fixer',
+          content_stale:'content-refresher'
+        }[String(type||'').toLowerCase()]|| (agentId==='technical-seo-watchdog'?'technical-seo-fixer':null);
+      };
       // Every actionable finding in the approved report gets its own
       // remediation job -- a multi-finding report must remediate all of its
       // findings, not just the first (remediation_jobs.owner_approval_id is
       // no longer UNIQUE; see remediation-store.js).
       for(const item of actionable){
         const type=item?.findingType||item?.type||item?.check||item?.code||'general';
-        const summary=String(item?.summary||item?.evidence||item?.title||item?.message||r?.title||'Approved agent finding').slice(0,1000);
-        const recommendedAction=String(item?.recommendedAction||item?.recommended_fix||item?.recommendation||r?.recommendation||'Prepare a repository-level fix for owner review.').slice(0,1000);
-        const remediationAgentId=route(type);
+        const summary=String(item?.summary||item?.evidence||item?.issue||item?.title||item?.message||r?.title||'Approved agent finding').slice(0,1000);
+        const recommendedAction=String(item?.recommendedAction||item?.recommended_fix||item?.afterApproval||item?.recommendation||r?.recommendation||'Prepare a repository-level fix for owner review.').slice(0,1000);
+        const remediationAgentId=route(type,record.agentId);
         const autonomy=classifyFindingType(type);
         const job={id:crypto.randomUUID(),sourceAgentId:record.agentId,sourceRunId:String(record.targetId),ownerApprovalId:record.id,findingType:String(type),summary,recommendedAction,rawFinding:item||{},remediationAgentId,autonomy,createdAt:new Date().toISOString()};
         await createRemediationJob(db,job);
