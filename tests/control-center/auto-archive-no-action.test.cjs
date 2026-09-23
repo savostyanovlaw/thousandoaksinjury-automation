@@ -38,6 +38,13 @@ test('isNoActionReview: a content artifact requiring review is never auto-archiv
   assert.equal(isNoActionReview({status:'REVIEW',approvalState:'PENDING',findingCount:0}),false);
 });
 
+test('isNoActionReview: empty read-only competitor REVIEW is no-action, but real artifacts stay gated',async()=>{
+  const {isNoActionReview}=await autonomy();
+  assert.equal(isNoActionReview({status:'REVIEW',mode:'MONITOR_ONLY',publishAllowed:false,findings:[],findingCount:0}),true);
+  assert.equal(isNoActionReview({status:'REVIEW',mode:'MONITOR_ONLY',publishAllowed:false,findings:[],findingCount:0,proposal:'Create a competitor response page'}),false);
+  assert.equal(isNoActionReview({status:'REVIEW',publishAllowed:false,findings:[{url:'https://example.com',changedFields:['title']}],findingCount:1}),false);
+});
+
 test('isNoActionReview: an explicit requiresAttorneyReview:true blocks auto-archive even when healthy',async()=>{
   const {isNoActionReview}=await autonomy();
   assert.equal(isNoActionReview({status:'HEALTHY',findingCount:0,requiresAttorneyReview:true}),false);
