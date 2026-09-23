@@ -196,6 +196,19 @@ ${x.body||''}`.toLowerCase().includes(String(marker).toLowerCase()))
     async mergePull(number,expectedHeadSha){
       requireWriteCredential();
       return json(`https://api.github.com/repos/${REPO}/pulls/${Number(number)}/merge`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({sha:expectedHeadSha,merge_method:'squash'})});
+    },
+    // A REQUEST_CHANGES decision on a REVIEW_RESULT approval re-runs the
+    // producing agent with the owner's feedback plus every real field its
+    // prior review already carried (see buildRevisionDispatch in
+    // approvals/[id].js) -- never a placeholder re-submission. Only agents
+    // whose script already accepts a change_request/revision pair are
+    // mapped here; approvals/[id].js never calls this for an unmapped
+    // agent.
+    async dispatchAgentRevision({workflow,inputs}){
+      requireWriteCredential();
+      const workflowFile=`${workflow}.yml`;
+      await json(`https://api.github.com/repos/${REPO}/actions/workflows/${encodeURIComponent(workflowFile)}/dispatches`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs})});
+      return {ok:true,workflow:workflowFile};
     }
   };
 }

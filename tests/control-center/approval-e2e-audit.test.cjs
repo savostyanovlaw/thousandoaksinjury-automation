@@ -22,10 +22,10 @@ function fakeDb(seedApprovals=[]){
         if(/^CREATE TABLE/i.test(trimmed)){ if(/remediation_jobs/i.test(trimmed)) remediationTableCreated=true; return {meta:{changes:0}}; }
         if(/^CREATE INDEX/i.test(trimmed)) return {meta:{changes:0}};
         if(/^UPDATE approvals SET status/i.test(trimmed)){
-          const [status,decidedAt,decidedBy,id]=args;
+          const [status,decidedAt,decidedBy,feedback,id]=args;
           const a=approvals.get(id);
           if(!a || a.status!=='PENDING') return {meta:{changes:0}};
-          a.status=status; a.decidedAt=decidedAt; a.decidedBy=decidedBy;
+          a.status=status; a.decidedAt=decidedAt; a.decidedBy=decidedBy; a.feedback=feedback;
           return {meta:{changes:1}};
         }
         if(/^UPDATE approvals SET consumed_at/i.test(trimmed)){
