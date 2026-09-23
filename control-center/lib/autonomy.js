@@ -71,7 +71,20 @@ export function isNoActionReview(reviewResult) {
   const findings = Array.isArray(rr.findings) ? rr.findings : (Array.isArray(rr.failures) ? rr.failures : null);
   const findingCount = Number.isFinite(Number(rr.findingCount)) ? Number(rr.findingCount) : (Array.isArray(findings) ? findings.length : null);
   if (findingCount === null || findingCount > 0) return false;
-  return rr.healthy === true || String(rr.status || '').toUpperCase() === 'HEALTHY';
+  if (rr.healthy === true || String(rr.status || '').toUpperCase() === 'HEALTHY') return true;
+  // Legacy/read-only monitoring agents may label a completed snapshot REVIEW
+  // even when they produced no actionable finding. Treat that as no-action
+  // only when the payload itself is explicitly non-publishing/monitor-only
+  // and contains no reviewable proposal/draft/content artifact.
+  const status = String(rr.status || '').toUpperCase();
+  const mode = String(rr.mode || '').toUpperCase();
+  const readOnlyMonitor = status === 'REVIEW' && (mode === 'MONITOR_ONLY' || rr.publishAllowed === false);
+  const artifactKeys = ['proposal','proposedChanges','proposed_changes','draft','localizedBody','script','spokenScript','videoUrl','video_url','targetPage','target_page'];
+  const hasReviewableArtifact = artifactKeys.some(k => {
+    const v = rr[k];
+    return Array.isArray(v) ? v.length > 0 : (v && typeof v === 'object' ? Object.keys(v).length > 0 : typeof v === 'string' ? v.trim().length > 0 : false);
+  });
+  return readOnlyMonitor && !hasReviewableArtifact;
 }
 
 // Decides, for one already-classified-GREEN finding, whether it is safe to
