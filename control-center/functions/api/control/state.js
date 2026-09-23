@@ -94,11 +94,30 @@ export async function onRequestGet(context){
       }),
       loadGitHubDiagnostics(github)
     ]);
-    // Push ingestion is the primary path for workflow review results. Do not
-    // synchronously fetch every agent's workflow logs while serving the dashboard:
-    // with multiple agents this can exceed the Pages Function request budget and
-    // leave the UI with blank summary counters. Historical/missed-run reconciliation
-    // must be handled out of band; the dashboard GET remains a bounded read path.
+    // Push ingestion is primary. Keep dashboard fallback reconciliation bounded:
+    // inspect only successful runs that are not already represented in approvals.
+    // This preserves missed-ingest recovery without re-reading logs for every agent
+    // on every dashboard request.
+    const knownRunIds=new Set(optional.pendingApprovals.filter(a=>a.action==='REVIEW_RESULT' && a.targetType==='workflow_run').map(a=>String(a.targetId)));
+    for(const agent of agents){
+      const wf=await github.getWorkflowState(agent);
+      const run=wf?.lastRun;
+      if(!wf?.lastSuccess || !run?.id || knownRunIds.has(String(run.id))) continue;
+      const review=await github.getWorkflowRunReview(run.id);
+      const rr=review?.reviewResult;
+      const findings=Array.isArray(rr?.findings)?rr.findings:[];
+      const findingCount=Number.isFinite(Number(rr?.findingCount))?Number(rr.findingCount):findings.length;
+      const status=String(rr?.status||'').toUpperCase();
+      const recommendation=String(rr?.recommendedAction||'').toUpperCase();
+      const noAction=(status==='HEALTHY' && findingCount===0 && (!recommendation || recommendation==='NO_ACTION' || recommendation==='AUTO_ARCHIVE'));
+      if(noAction){
+        await writeAudit(context.env.CONTROL_DB,{timestamp:new Date().toISOString(),actor:'system:dashboard-reconciliation',agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id),autonomy:'GREEN',result:'auto-archived-no-action'});
+        continue;
+      }
+      const payload={agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id)};
+      const row=await ensureRunReviewApproval(context.env.CONTROL_DB,{...payload,id:crypto.randomUUID(),payloadHash:await targetHash(payload),status:'PENDING',createdAt:run.createdAt||new Date().toISOString()});
+      if(row) await maybeAutoRemediateGreenReport({approvalRow:row,db:context.env.CONTROL_DB,github});
+    }
     const reconciledApprovals=await listPendingApprovals(context.env.CONTROL_DB);
     const state=await buildDashboardState({agents,github,pendingApprovals:reconciledApprovals,auditEvents:optional.auditEvents});
     state.githubDiagnostics=githubDiagnostics;
