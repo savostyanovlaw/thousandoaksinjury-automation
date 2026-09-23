@@ -29,6 +29,18 @@ on:
   pull_request:
     paths: ['scripts/video_engine.py','scripts/video_topic_bank.py','scripts/video_topic_selector.py','scripts/video_engine_daily.py','tests/test_video_engine.py','tests/test_video_topic_bank.py','tests/test_video_topic_selector.py','tests/test_video_engine_daily.py','.github/workflows/video-engine.yml']
 permissions: {contents: read, actions: read, id-token: write}
+# The one-proposal-per-Pacific-day cap is enforced by reconstructing history
+# from past runs' own logs (see video_engine_daily.py) -- a run that is
+# still in progress has not yet printed its marker, so it is invisible to a
+# second run's history check. Without this, the schedule firing at the same
+# moment as a workflow_dispatch (e.g. Content Creator's automatic handoff)
+# could let two runs both see "not yet proposed today" and both produce a
+# proposal. Serializing runs (never cancelling one to run behind another)
+# closes that race exactly the way technical-seo-watchdog.yml already does
+# for its own cross-trigger overlap.
+concurrency:
+  group: video-engine
+  cancel-in-progress: false
 jobs:
   generate:
     runs-on: ubuntu-latest
