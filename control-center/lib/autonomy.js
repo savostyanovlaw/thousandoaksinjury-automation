@@ -68,23 +68,41 @@ export function isNoActionReview(reviewResult) {
   if (String(rr.approvalState || '').toUpperCase() === 'NOT_REQUIRED') return true;
   if (rr.approvalState !== undefined) return false;
   if (rr.requiresAttorneyReview === true) return false;
-  const findings = Array.isArray(rr.findings) ? rr.findings : (Array.isArray(rr.failures) ? rr.failures : null);
-  const findingCount = Number.isFinite(Number(rr.findingCount)) ? Number(rr.findingCount) : (Array.isArray(findings) ? findings.length : null);
-  if (findingCount === null || findingCount > 0) return false;
+  // Real agent scripts spell "how many actionable items" differently:
+  // findingCount/findings (Technical SEO Watchdog, Opportunity Finder,
+  // Local SEO Robot), failures (legacy Watchdog shape), suggestionCount/
+  // proposals (Internal Link Builder), findingCount alone with per-page
+  // proposals (CTR Optimizer). ANY of these present and nonzero means real,
+  // actionable content -- checked before any healthy/status inference, and
+  // regardless of which other fields are or are not present, since a script
+  // that reports a real count is always authoritative about it.
+  const countCandidates = [
+    rr.findingCount,
+    Array.isArray(rr.findings) ? rr.findings.length : undefined,
+    Array.isArray(rr.failures) ? rr.failures.length : undefined,
+    rr.suggestionCount,
+    Array.isArray(rr.proposals) ? rr.proposals.length : undefined,
+  ].filter((v) => v !== undefined).map(Number).filter((v) => Number.isFinite(v));
+  if (countCandidates.some((v) => v > 0)) return false;
+  // No count signal of any kind (a legacy/unknown report shape) is never
+  // auto-archived -- there is nothing here to affirmatively confirm no-action.
+  if (countCandidates.length === 0) return false;
   if (rr.healthy === true || String(rr.status || '').toUpperCase() === 'HEALTHY') return true;
-  // Legacy/read-only monitoring agents may label a completed snapshot REVIEW
-  // even when they produced no actionable finding. Treat that as no-action
-  // only when the payload itself is explicitly non-publishing/monitor-only
-  // and contains no reviewable proposal/draft/content artifact.
-  const status = String(rr.status || '').toUpperCase();
-  const mode = String(rr.mode || '').toUpperCase();
-  const readOnlyMonitor = status === 'REVIEW' && (mode === 'MONITOR_ONLY' || rr.publishAllowed === false);
+  // A zero-count report that never explicitly declares itself healthy can
+  // still be genuinely no-action -- real read-only/proposal-only monitoring
+  // scripts (Competitor Monitor, Internal Link Builder) never set a
+  // healthy/status field at all. Treat that as no-action only when the
+  // payload itself explicitly declares it is non-publishing (monitor- or
+  // proposal-only) and contains no reviewable proposal/draft/content
+  // artifact -- a real content artifact can legitimately carry a zero count
+  // and must never be inferred as no-action merely from its mode.
+  const nonPublishing = rr.publishAllowed === false || /MONITOR_ONLY|PROPOSAL_ONLY|READ_ONLY/.test(String(rr.mode || '').toUpperCase());
   const artifactKeys = ['proposal','proposedChanges','proposed_changes','draft','localizedBody','script','spokenScript','videoUrl','video_url','targetPage','target_page'];
   const hasReviewableArtifact = artifactKeys.some(k => {
     const v = rr[k];
     return Array.isArray(v) ? v.length > 0 : (v && typeof v === 'object' ? Object.keys(v).length > 0 : typeof v === 'string' ? v.trim().length > 0 : false);
   });
-  return readOnlyMonitor && !hasReviewableArtifact;
+  return nonPublishing && !hasReviewableArtifact;
 }
 
 // Decides, for one already-classified-GREEN finding, whether it is safe to

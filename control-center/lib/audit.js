@@ -8,6 +8,16 @@ export async function writeAudit(db,event){
   return safe;
 }
 
+// A targeted, single-pair lookup -- never capped by listAuditEvents' own
+// most-recent-N window (100 rows max), which historical cleanup work must
+// not be limited by: a run ingested long ago can easily have fallen out of
+// that window while its approval row is still sitting in Needs Approval.
+export async function hasAuditResult(db,{agentId,action,targetId,result}){
+  if(!db?.prepare) return false;
+  const row=await db.prepare('SELECT 1 FROM audit_events WHERE agent_id = ? AND action = ? AND target_id = ? AND result = ? LIMIT 1').bind(agentId,action,String(targetId),result).first();
+  return !!row;
+}
+
 export async function listAuditEvents(db,limit=50){
   if(!db?.prepare) return [];
   const safeLimit=Math.max(1,Math.min(Number(limit)||50,100));

@@ -11,7 +11,8 @@ import { maybeAutoRemediateGreenReport } from '../../../lib/auto-remediate.js';
 import { isNoActionReview } from '../../../lib/autonomy.js';
 import { pollRenderingVideoJobs } from '../../../lib/video-pipeline.js';
 import { createHeyGenClient } from '../../../lib/heygen.js';
-import { listVideoJobsNeedingAttention } from '../../../lib/video-store.js';
+import { listVideoJobsNeedingAttention, getVideoJob } from '../../../lib/video-store.js';
+import { cleanupApprovalQueue } from '../../../lib/queue-cleanup.js';
 
 // A single, owner-facing label per remediation job status -- this is the
 // self-healing loop's visible outcome, distinct from (and shown alongside)
@@ -97,25 +98,50 @@ export async function onRequestGet(context){
       }),
       loadGitHubDiagnostics(github)
     ]);
+    // A cheap, always-on pass (no GitHub re-fetch): any currently-PENDING
+    // approval whose exact run already has an authoritative
+    // auto-archived-no-action audit record, is a stale duplicate of an
+    // earlier PENDING row for the same exact target, or belongs to an
+    // agent no longer in the registry, is moved out of Needs Approval right
+    // here, on every single dashboard load -- not merely once. This is what
+    // makes the "already-classified no-action" invariant hold continuously
+    // rather than only immediately after a one-time cleanup.
+    const cheapCleanup=await cleanupApprovalQueue({db:context.env.CONTROL_DB,github,agents,fetchReviewResults:false,listPendingApprovals:async()=>optional.pendingApprovals,getVideoJobStatus:async(db,id)=>(await getVideoJob(db,id))?.status});
+    if(cheapCleanup.results.some(r=>r.transitioned)){
+      const transitionedIds=new Set(cheapCleanup.results.filter(r=>r.transitioned).map(r=>r.approvalId));
+      optional.pendingApprovals=optional.pendingApprovals.filter(a=>!transitionedIds.has(a.id));
+    }
     // Push ingestion is primary. Keep dashboard fallback reconciliation bounded:
     // inspect only successful runs that are not already represented in approvals.
     // This preserves missed-ingest recovery without re-reading logs for every agent
     // on every dashboard request.
     const knownRunIds=new Set(optional.pendingApprovals.filter(a=>a.action==='REVIEW_RESULT' && a.targetType==='workflow_run').map(a=>String(a.targetId)));
+    // Once a run has ANY REVIEW_RESULT audit record -- ingested normally, or
+    // auto-archived-no-action -- it has already been authoritatively
+    // classified by the push-ingest path (review-result.js). This fallback
+    // reconciliation exists only to recover a run that ingest never reached
+    // at all (CONTROL_CENTER_URL missing, a failed ingest call); it must
+    // never re-derive or re-decide a run that already has an audit trail,
+    // which would otherwise happen fresh on every single dashboard load and
+    // could recreate a PENDING approval the authoritative path already
+    // correctly archived.
+    const auditedRunIds=new Set((optional.auditEvents||[]).filter(e=>e.action==='REVIEW_RESULT' && e.targetType==='workflow_run').map(e=>`${e.agentId}:${String(e.targetId)}`));
     for(const agent of agents){
       const wf=await github.getWorkflowState(agent);
       const run=wf?.lastRun;
-      if(!wf?.lastSuccess || !run?.id || knownRunIds.has(String(run.id))) continue;
+      if(!wf?.lastSuccess || !run?.id || knownRunIds.has(String(run.id)) || auditedRunIds.has(`${agent.id}:${String(run.id)}`)) continue;
       const review=await github.getWorkflowRunReview(run.id);
       const rr=review?.reviewResult;
-      const findings=Array.isArray(rr?.findings)?rr.findings:[];
-      const findingCount=Number.isFinite(Number(rr?.findingCount))?Number(rr.findingCount):findings.length;
-      const status=String(rr?.status||'').toUpperCase();
-      const recommendation=String(rr?.recommendedAction||'').toUpperCase();
-      const noAction=((status==='HEALTHY' || rr?.healthy===true) && findingCount===0 && (!recommendation || recommendation==='NO_ACTION' || recommendation==='AUTO_ARCHIVE'));
-      if(noAction){
-        const priorAudit=(optional.auditEvents||[]).some(e=>e.agentId===agent.id && e.action==='REVIEW_RESULT' && String(e.targetId)===String(run.id) && e.result==='auto-archived-no-action');
-        if(!priorAudit) await writeAudit(context.env.CONTROL_DB,{timestamp:new Date().toISOString(),actor:'system:dashboard-reconciliation',agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id),autonomy:'GREEN',result:'auto-archived-no-action'});
+      // The exact same classifier the authoritative push-ingest path uses
+      // (isNoActionReview) -- never a separate, looser inline check here.
+      // Two independent classifiers for the same decision inevitably drift
+      // apart (a real read-only monitor or proposal-only agent with no
+      // findings/proposals can lack the healthy/status fields a narrower
+      // check requires), which is exactly how this fallback path previously
+      // recreated approvals for runs the authoritative path had already
+      // correctly archived.
+      if(isNoActionReview(rr)){
+        await writeAudit(context.env.CONTROL_DB,{timestamp:new Date().toISOString(),actor:'system:dashboard-reconciliation',agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id),autonomy:'GREEN',result:'auto-archived-no-action'});
         continue;
       }
       const payload={agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id)};
