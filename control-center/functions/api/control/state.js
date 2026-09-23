@@ -9,6 +9,9 @@ import { listAuditEvents, writeAudit } from '../../../lib/audit.js';
 import { listRemediationJobs, listStuckRemediationJobs } from '../../../lib/remediation-store.js';
 import { maybeAutoRemediateGreenReport } from '../../../lib/auto-remediate.js';
 import { isNoActionReview } from '../../../lib/autonomy.js';
+import { pollRenderingVideoJobs } from '../../../lib/video-pipeline.js';
+import { createHeyGenClient } from '../../../lib/heygen.js';
+import { listVideoJobsNeedingAttention } from '../../../lib/video-store.js';
 
 // A single, owner-facing label per remediation job status -- this is the
 // self-healing loop's visible outcome, distinct from (and shown alongside)
@@ -119,6 +122,12 @@ export async function onRequestGet(context){
       const row=await ensureRunReviewApproval(context.env.CONTROL_DB,{...payload,id:crypto.randomUUID(),payloadHash:await targetHash(payload),status:'PENDING',createdAt:run.createdAt||new Date().toISOString()});
       if(row) await maybeAutoRemediateGreenReport({approvalRow:row,db:context.env.CONTROL_DB,github});
     }
+    // HeyGen renders asynchronously (there is no webhook path today, only
+    // the legacy n8n pipeline's own separate polling workflow) -- a
+    // video_job left RENDERING is checked again on every dashboard load,
+    // the same pull-based pattern maybeAutoRemediateGreenReport's own retry
+    // loop already uses. A no-op when HeyGen is not configured.
+    await pollRenderingVideoJobs({db:context.env.CONTROL_DB,heygen:createHeyGenClient({apiKey:context.env.HEYGEN_API_KEY,avatarId:context.env.HEYGEN_AVATAR_ID,voiceId:context.env.HEYGEN_VOICE_ID})});
     const reconciledApprovals=await listPendingApprovals(context.env.CONTROL_DB);
     const state=await buildDashboardState({agents,github,pendingApprovals:reconciledApprovals,auditEvents:optional.auditEvents});
     state.githubDiagnostics=githubDiagnostics;
@@ -142,6 +151,14 @@ export async function onRequestGet(context){
     state.stuckRemediationJobs=optional.stuckRemediationJobs;
     if(optional.stuckRemediationJobs.length){
       state.attention=[...state.attention,...optional.stuckRemediationJobs.map(j=>({agentId:j.sourceAgentId,title:`${j.sourceAgentId}: automatic remediation for ${j.findingType} did not report a final result`,issues:[{number:0,title:`Stuck in ${j.status} since ${j.updatedAt}`,url:null}]}))];
+    }
+    // A video job blocked on missing HeyGen/YouTube configuration, or one
+    // that failed rendering/publication, has no other surface: the script
+    // approval that created it is already consumed, and a blocked/failed
+    // job never gets a PUBLISH_VIDEO approval to appear in Needs Approval.
+    const attentionVideoJobs=await listVideoJobsNeedingAttention(context.env.CONTROL_DB);
+    if(attentionVideoJobs.length){
+      state.attention=[...state.attention,...attentionVideoJobs.map(j=>({agentId:'video-engine',title:`Video "${j.title}": ${j.status}${j.lastError?` -- ${j.lastError}`:''}`,issues:[{number:0,title:`Since ${j.updatedAt}`,url:null}]}))];
     }
     if(optional.degraded){
       state.stale=true;

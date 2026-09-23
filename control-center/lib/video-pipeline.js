@@ -1,0 +1,73 @@
+import { createVideoJob, updateVideoJob, getVideoJobByScriptApproval, listVideoJobsByStatus } from './video-store.js';
+import { insertApproval } from './approval-store.js';
+import { targetHash } from './approvals.js';
+
+// Stage 1 of the Video Engine pipeline: called the moment the owner
+// approves a video-engine script proposal. Approving the script authorizes
+// RENDERING ONLY -- it never authorizes YouTube publication (see
+// video-store.js's status set and approvals/[id].js's separate PUBLISH_VIDEO
+// approval, created only once a video is actually ready for review).
+export async function startVideoRendering({record,pkg,db,heygen}){
+  // Idempotent: decideApproval's own atomic PENDING->APPROVED claim already
+  // means this only ever runs once per approval in practice, but this is a
+  // second, independent guard at the video_jobs layer -- a retried call
+  // must never submit a second real HeyGen render.
+  const existing=await getVideoJobByScriptApproval(db,record.id);
+  if(existing) return existing;
+  const script=String(pkg?.script||'');
+  const title=String(pkg?.title||'Untitled video');
+  const topic=String(pkg?.topic||'');
+  const base={id:crypto.randomUUID(),scriptApprovalId:record.id,sourceRunId:String(record.targetId),topic,title,script,createdAt:new Date().toISOString()};
+  if(!heygen?.configured){
+    // A genuine, precisely identifiable external blocker -- never a
+    // fallback to a public/generic avatar or a different voice. See
+    // heygen.js's own comment.
+    const created=await createVideoJob(db,{...base,status:'BLOCKED_HEYGEN_CONFIGURATION'});
+    return created||await getVideoJobByScriptApproval(db,record.id);
+  }
+  let videoId=null,status='RENDERING',error=null;
+  try{
+    ({videoId}=await heygen.submitRender(script));
+  }catch(err){
+    status='RENDER_FAILED';
+    error=String(err?.message||err).slice(0,300);
+  }
+  const created=await createVideoJob(db,{...base,status});
+  if(!created) return await getVideoJobByScriptApproval(db,record.id);
+  if(videoId||error) await updateVideoJob(db,created.id,status,{heygenVideoId:videoId,error});
+  return {...created,status,heygenVideoId:videoId,lastError:error};
+}
+
+// Called from state.js's dashboard-load reconciliation, mirroring exactly
+// how maybeAutoRemediateGreenReport's own retry loop already works: HeyGen
+// renders asynchronously (Workflow B in the legacy n8n pipeline polls it the
+// same way), so a video_job left RENDERING needs to be checked again on a
+// later load rather than blocking the original approval request on it.
+export async function pollRenderingVideoJobs({db,heygen}){
+  if(!heygen?.configured) return;
+  const pending=await listVideoJobsByStatus(db,'RENDERING');
+  for(const job of pending){
+    if(!job.heygenVideoId) continue;
+    let result;
+    try{
+      result=await heygen.pollStatus(job.heygenVideoId);
+    }catch{
+      // A transient polling failure (network blip) must not flip a
+      // genuinely still-rendering job to failed -- leave it RENDERING and
+      // let the next dashboard load try again.
+      continue;
+    }
+    if(!result.done) continue;
+    if(result.status==='completed' && result.videoUrl){
+      // The finished video needs its OWN approval, separate from the
+      // script approval that only ever authorized rendering -- Stage 2
+      // (Approve & Publish) is a distinct, later, revision-bound decision.
+      const payload={agentId:'video-engine',action:'PUBLISH_VIDEO',targetType:'video_job',targetId:job.id,targetRevision:job.id};
+      const publishApprovalId=crypto.randomUUID();
+      await insertApproval(db,{...payload,id:publishApprovalId,payloadHash:await targetHash(payload),createdAt:new Date().toISOString()});
+      await updateVideoJob(db,job.id,'VIDEO_READY_FOR_REVIEW',{videoUrl:result.videoUrl,publishApprovalId});
+    }else{
+      await updateVideoJob(db,job.id,'RENDER_FAILED',{error:result.error||'HeyGen reported a failed render'});
+    }
+  }
+}

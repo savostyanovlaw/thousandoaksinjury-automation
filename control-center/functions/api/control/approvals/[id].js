@@ -5,6 +5,8 @@ import { getApproval, decideApproval, consumeApproval, ensureControlSchema } fro
 import { writeAudit } from '../../../../lib/audit.js';
 import { createRemediationJob, updateRemediationJob } from '../../../../lib/remediation-store.js';
 import { classifyFindingType } from '../../../../lib/autonomy.js';
+import { startVideoRendering } from '../../../../lib/video-pipeline.js';
+import { createHeyGenClient } from '../../../../lib/heygen.js';
 import { assertExactFields, errorResponse, jsonResponse, parseJson, requireSameOrigin } from '../../../../lib/http.js';
 
 // Which agents' scripts already accept a change_request/revision pair (see
@@ -33,7 +35,7 @@ function buildRevisionDispatch(agentId,rr,feedback){
   return null;
 }
 
-export async function executeApprovalDecision({record,decision,user,db,github,feedback}){
+export async function executeApprovalDecision({record,decision,user,db,github,heygen,feedback}){
   if(!record) throw new Error('Approval not found');
   if(record.status!=='PENDING') throw new Error('Approval is stale or already decided');
   if(decision==='REJECT'){
@@ -77,6 +79,19 @@ export async function executeApprovalDecision({record,decision,user,db,github,fe
     // fetching the review itself, not just an individual remediation
     // dispatch -- is returned as a structured failed result instead, so the
     // decision is always audited even when execution could not complete.
+    if(record.agentId==='video-engine'){
+      // A video-engine script proposal is never a "finding" to route to a
+      // remediation job -- approving it authorizes RENDERING ONLY (see
+      // video-pipeline.js's own comment). Publication is a separate, later,
+      // revision-bound approval created once the render actually finishes.
+      try{
+        const review=await github.getWorkflowRunReview(record.targetId);
+        const videoJob=await startVideoRendering({record,pkg:review?.reviewResult||{},db,heygen});
+        return {ok:true,executed:false,videoJob,...decided};
+      }catch(error){
+        return {ok:false,executed:false,failed:true,error:String(error?.message||error).slice(0,300),...decided};
+      }
+    }
     try{
       const review=await github.getWorkflowRunReview(record.targetId);
       const r=review?.reviewResult||{};
@@ -145,6 +160,15 @@ export async function executeApprovalDecision({record,decision,user,db,github,fe
       return {ok:false,executed:false,failed:true,error:String(error?.message||error).slice(0,300),...decided};
     }
   }
+  if(record.targetType==='video_job' && record.action==='PUBLISH_VIDEO'){
+    // Stage 2 (Approve & Publish -> YouTube) is not yet wired -- this
+    // approval type exists today only so the finished video is visible in
+    // Final Review. An explicit, honest error here (never a silent no-op,
+    // and never the generic "Unsupported RED action" message, which would
+    // wrongly suggest an autonomy misconfiguration) until publication
+    // lands.
+    throw new Error('YouTube publication is not yet available for this video.');
+  }
   if(record.targetType!=='pull_request' || record.action!=='MERGE_PR') throw new Error('Unsupported RED action');
   const current=await github.getPullRevision(record.targetId);
   const payload={agentId:record.agentId,action:record.action,targetType:record.targetType,targetId:String(record.targetId),targetRevision:String(current.targetRevision)};
@@ -172,8 +196,8 @@ export async function executeApprovalDecision({record,decision,user,db,github,fe
 // audit through the exact same code -- an autonomous decision is not a
 // different, lighter-weight code path than a human one, only a different
 // actor string.
-export async function applyApprovalDecision({record,decision,actor,db,github,feedback}){
-  const result=await executeApprovalDecision({record,decision,user:{email:actor},db,github,feedback});
+export async function applyApprovalDecision({record,decision,actor,db,github,heygen,feedback}){
+  const result=await executeApprovalDecision({record,decision,user:{email:actor},db,github,heygen,feedback});
   // A structured {failed:true} result still means the approval WAS
   // claimed (decideApproval already succeeded inside
   // executeApprovalDecision) -- it must be audited as a failed execution,
@@ -185,7 +209,9 @@ export async function applyApprovalDecision({record,decision,actor,db,github,fee
       ? (result.failed?'changes-requested-redispatch-failed':(result.redispatched?'changes-requested':'changes-requested-no-redispatch'))
       : result.failed
         ? (record.action==='REVIEW_RESULT'?'review-approved-with-errors':'approved-execution-failed')
-        : (record.action==='REVIEW_RESULT'?'review-approved':'approved-executed');
+        : record.agentId==='video-engine' && record.action==='REVIEW_RESULT'
+          ? (result.videoJob?.status==='BLOCKED_HEYGEN_CONFIGURATION'?'video-render-blocked-configuration':'video-render-started')
+          : (record.action==='REVIEW_RESULT'?'review-approved':'approved-executed');
   await writeAudit(db,{timestamp:new Date().toISOString(),actor,agentId:record.agentId,action:record.action,targetType:record.targetType,targetId:record.targetId,targetRevision:record.targetRevision,autonomy:record.action==='REVIEW_RESULT'?'YELLOW':'RED',result:auditResult,approvalId:record.id,githubPrNumber:Number(record.targetId)});
   return result;
 }
@@ -195,7 +221,8 @@ export async function onRequestPost(context){
     const user=await requireAuthorizedUser(context,context.env); requireSameOrigin(context.request); const body=await parseJson(context.request); assertExactFields(body,['decision','feedback'],['decision']);
     await ensureControlSchema(context.env.CONTROL_DB);
     const record=await getApproval(context.env.CONTROL_DB,context.params.id); const github=createGitHubAdapter({token:context.env.GITHUB_TOKEN});
-    const result=await applyApprovalDecision({record,decision:body.decision,actor:user.email,db:context.env.CONTROL_DB,github,feedback:body.feedback});
+    const heygen=createHeyGenClient({apiKey:context.env.HEYGEN_API_KEY,avatarId:context.env.HEYGEN_AVATAR_ID,voiceId:context.env.HEYGEN_VOICE_ID});
+    const result=await applyApprovalDecision({record,decision:body.decision,actor:user.email,db:context.env.CONTROL_DB,github,heygen,feedback:body.feedback});
     return jsonResponse(result);
   }catch(error){ return errorResponse(error); }
 }
