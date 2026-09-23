@@ -38,7 +38,8 @@ def localize(source_id,source_revision,title,body,localized_title=None,localized
     result={
         "agent":"russian-language-robot","sourceId":source_id,"sourceRevision":source_revision,
         "language":"ru","status":"READY_FOR_REVIEW","translationStatus":"READY_FOR_REVIEW",
-        "localizationRevision":int(revision),"sourceTitle":title,"localizedTitle":localized_title,
+        "localizationRevision":int(revision),"sourceTitle":title,"sourceBody":body,
+        "localizedTitle":localized_title,
         "localizedBody":localized_body,"qaIssues":qa_issues,"qaIssueCount":len(qa_issues),
         "mode":"REVIEW_ONLY","requiresAttorneyReview":True,"publishAllowed":False,
         "approvalState":"PENDING","siteMutated":False,
