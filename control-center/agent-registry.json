@@ -194,5 +194,23 @@
     "workflows": {
       "RUN_NOW": "competitor-monitor.yml"
     }
+  },
+  {
+    "id": "entity-brand-authority",
+    "trigger": "scheduled",
+    "cadenceHours": 168,
+    "name": "Entity / Brand Authority",
+    "description": "Strengthens the verified association between Thousand Oaks Injury Law, thousandoaksinjury.com, Savostyanov Law Corporation, and attorney Alexey Savostyanov across search and AI systems. Audits entity consistency, structured data, authoritative profiles, citations, and brand-query recognition; proposes changes for owner approval only.",
+    "deployed": true,
+    "disabled": false,
+    "commands": [
+      {
+        "name": "RUN_NOW",
+        "autonomy": "GREEN"
+      }
+    ],
+    "workflows": {
+      "RUN_NOW": "entity-brand-authority.yml"
+    }
   }
 ]
