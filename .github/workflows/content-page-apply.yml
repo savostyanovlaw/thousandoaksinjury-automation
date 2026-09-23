@@ -1,0 +1,120 @@
+name: Content Page Apply
+
+# Dispatched only after the owner has already approved a Content Refresher
+# draft's exact before/after diff in the Control Center (see
+# executeApprovalDecision / dispatchRemediation's 'content-page-editor'
+# branch). This never generates new content and never decides what to
+# change -- it applies ONLY the already-reviewed text, and only if that
+# exact text is still present in the real page. Content always stays
+# YELLOW here: this opens a pull request for a human to merge and never
+# merges, deploys, or publishes anything itself.
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Remediation job ID
+        required: true
+        type: string
+      page_url:
+        description: Real production page URL the reviewed diff applies to
+        required: true
+        type: string
+      before:
+        description: Exact reviewed "before" text (must still match the live page exactly once)
+        required: true
+        type: string
+      after:
+        description: Exact reviewed "after" text
+        required: true
+        type: string
+      issue:
+        description: The reviewed reason for this change
+        required: false
+        type: string
+      source_run_id:
+        description: Source Content Refresher run ID
+        required: false
+        type: string
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m unittest tests.test_apply_content_diff -v
+
+      - name: Apply the reviewed diff to the real page
+        id: apply
+        env:
+          JOB_ID: ${{ inputs.job_id }}
+          PAGE_URL: ${{ inputs.page_url }}
+          BEFORE: ${{ inputs.before }}
+          AFTER: ${{ inputs.after }}
+        run: |
+          set -euo pipefail
+          BRANCH="content/$JOB_ID"
+          git checkout -b "$BRANCH"
+          python3 - <<'PY'
+          import os, sys
+          from pathlib import Path
+          from scripts.apply_content_diff import resolve_page_path, apply_diff
+
+          page_url = os.environ["PAGE_URL"]
+          before = os.environ["BEFORE"]
+          after = os.environ["AFTER"]
+
+          try:
+              rel_path = resolve_page_path(page_url)
+          except ValueError as exc:
+              print(f"::error::{exc}")
+              sys.exit(1)
+
+          path = Path(rel_path)
+          if not path.is_file():
+              print(f"::error::page file not found: {path}")
+              sys.exit(1)
+
+          content = path.read_text(encoding="utf-8")
+          try:
+              updated = apply_diff(content, before, after)
+          except ValueError as exc:
+              print(f"::error::{exc}")
+              sys.exit(1)
+
+          path.write_text(updated, encoding="utf-8")
+          print(f"Applied reviewed change to {path}")
+          PY
+
+      - name: Validate the site is still structurally correct
+        run: python3 scripts/validate_site.py --root website
+
+      - name: Commit and open a pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_ID: ${{ inputs.job_id }}
+          ISSUE: ${{ inputs.issue }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          BRANCH="content/$JOB_ID"
+          git config user.name "SLC Content Refresher"
+          git config user.email "actions@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "::error::No file change was produced; refusing to open an empty pull request."
+            exit 1
+          fi
+          git add website/
+          git commit -m "Apply reviewed content refresh $JOB_ID"
+          git push origin "$BRANCH"
+          TITLE="Content refresh: ${ISSUE:-reviewed change}"
+          BODY="Applies the exact before/after text the owner already reviewed and approved in the Control Center (job $JOB_ID, source run $SOURCE_RUN_ID). This pull request only ever needs a human merge -- nothing in this workflow merges, deploys, or publishes it."
+          if gh pr create --base main --head "$BRANCH" --title "$TITLE" --body "$BODY"; then
+            :
+          else
+            echo "::warning::Branch prepared and pushed, but repository policy blocks GitHub Actions from creating pull requests. The Control Center/GitHub integration must open the PR."
+          fi
