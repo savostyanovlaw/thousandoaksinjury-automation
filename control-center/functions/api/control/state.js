@@ -109,9 +109,10 @@ export async function onRequestGet(context){
       const findingCount=Number.isFinite(Number(rr?.findingCount))?Number(rr.findingCount):findings.length;
       const status=String(rr?.status||'').toUpperCase();
       const recommendation=String(rr?.recommendedAction||'').toUpperCase();
-      const noAction=(status==='HEALTHY' && findingCount===0 && (!recommendation || recommendation==='NO_ACTION' || recommendation==='AUTO_ARCHIVE'));
+      const noAction=((status==='HEALTHY' || rr?.healthy===true) && findingCount===0 && (!recommendation || recommendation==='NO_ACTION' || recommendation==='AUTO_ARCHIVE'));
       if(noAction){
-        await writeAudit(context.env.CONTROL_DB,{timestamp:new Date().toISOString(),actor:'system:dashboard-reconciliation',agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id),autonomy:'GREEN',result:'auto-archived-no-action'});
+        const priorAudit=(optional.auditEvents||[]).some(e=>e.agentId===agent.id && e.action==='REVIEW_RESULT' && String(e.targetId)===String(run.id) && e.result==='auto-archived-no-action');
+        if(!priorAudit) await writeAudit(context.env.CONTROL_DB,{timestamp:new Date().toISOString(),actor:'system:dashboard-reconciliation',agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id),autonomy:'GREEN',result:'auto-archived-no-action'});
         continue;
       }
       const payload={agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id)};
