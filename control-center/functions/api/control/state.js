@@ -94,39 +94,44 @@ export async function onRequestGet(context){
       }),
       loadGitHubDiagnostics(github)
     ]);
-    // Reconcile successful workflow runs into the owner review queue.
-    // Presentation decides whether a result is actionable; execution remains approval-gated.
-    // This is review-only: approving a result never publishes or executes it.
+    // Push ingestion is primary. Keep dashboard fallback reconciliation bounded:
+    // inspect only successful runs that are not already represented in approvals.
+    // This preserves missed-ingest recovery without re-reading logs for every agent
+    // on every dashboard request.
+    const knownRunIds=new Set(optional.pendingApprovals.filter(a=>a.action==='REVIEW_RESULT' && a.targetType==='workflow_run').map(a=>String(a.targetId)));
     for(const agent of agents){
       const wf=await github.getWorkflowState(agent);
       const run=wf?.lastRun;
-      if(wf?.lastSuccess && run?.id){
-        // Safe here (unlike the push-ingest path in ingest/review-result.js):
-        // by the time a dashboard load runs this, the run itself has already
-        // been reported completed by getWorkflowState, so its job logs are
-        // stable and this reconstruction cannot race the still-running job's
-        // own log finalization.
-        const review=await github.getWorkflowRunReview(run.id);
-        if(isNoActionReview(review?.reviewResult)){
-          // Idempotent: repeated dashboard loads while this remains the
-          // agent's latest run must never write a second audit row for it.
-          const claimed=await claimCommandIdempotency(context.env.CONTROL_DB,`review-result:no-action:${agent.id}:${run.id}`,agent.id,'AUTO_ARCHIVE_REVIEW');
-          if(claimed){
-            await writeAudit(context.env.CONTROL_DB,{timestamp:new Date().toISOString(),actor:'dashboard-reconciliation',agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id),autonomy:'GREEN',result:'auto-archived-no-action'});
-          }
-          continue;
+      // Bounded per lib/approval-store.js's request budget (see PR #122):
+      // skip runs already represented by a pending approval instead of
+      // re-fetching and re-reviewing every agent's logs on every dashboard
+      // load.
+      if(!wf?.lastSuccess || !run?.id || knownRunIds.has(String(run.id))) continue;
+      // Safe here (unlike the push-ingest path in ingest/review-result.js):
+      // by the time a dashboard load runs this, the run itself has already
+      // been reported completed by getWorkflowState, so its job logs are
+      // stable and this reconstruction cannot race the still-running job's
+      // own log finalization.
+      const review=await github.getWorkflowRunReview(run.id);
+      if(isNoActionReview(review?.reviewResult)){
+        // Idempotent: repeated dashboard loads while this remains the
+        // agent's latest run must never write a second audit row for it.
+        const claimed=await claimCommandIdempotency(context.env.CONTROL_DB,`review-result:no-action:${agent.id}:${run.id}`,agent.id,'AUTO_ARCHIVE_REVIEW');
+        if(claimed){
+          await writeAudit(context.env.CONTROL_DB,{timestamp:new Date().toISOString(),actor:'dashboard-reconciliation',agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id),autonomy:'GREEN',result:'auto-archived-no-action'});
         }
-        const payload={agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id)};
-        const row=await ensureRunReviewApproval(context.env.CONTROL_DB,{...payload,id:crypto.randomUUID(),payloadHash:await targetHash(payload),status:'PENDING',createdAt:run.createdAt||new Date().toISOString()});
-        // The fast path for a genuinely new approval -- see
-        // lib/auto-remediate.js for what "fully green" means here. The
-        // producing workflow's own push-ingest call (see
-        // ingest/review-result.js) almost always creates the row before this
-        // loop ever runs, so `row` is usually null here; the retry loop
-        // below is what actually gives most runs their real chance at
-        // auto-remediation.
-        if(row) await maybeAutoRemediateGreenReport({approvalRow:row,db:context.env.CONTROL_DB,github});
+        continue;
       }
+      const payload={agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id)};
+      const row=await ensureRunReviewApproval(context.env.CONTROL_DB,{...payload,id:crypto.randomUUID(),payloadHash:await targetHash(payload),status:'PENDING',createdAt:run.createdAt||new Date().toISOString()});
+      // The fast path for a genuinely new approval -- see
+      // lib/auto-remediate.js for what "fully green" means here. The
+      // producing workflow's own push-ingest call (see
+      // ingest/review-result.js) almost always creates the row before this
+      // loop ever runs, so `row` is usually null here; the retry loop
+      // below is what actually gives most runs their real chance at
+      // auto-remediation.
+      if(row) await maybeAutoRemediateGreenReport({approvalRow:row,db:context.env.CONTROL_DB,github});
     }
     // Retry auto-remediation for existing still-PENDING REVIEW_RESULT
     // approvals too, not just brand-new ones. The very first attempt
