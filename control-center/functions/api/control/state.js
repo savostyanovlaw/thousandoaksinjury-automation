@@ -94,33 +94,11 @@ export async function onRequestGet(context){
       }),
       loadGitHubDiagnostics(github)
     ]);
-    // Reconcile successful workflow runs into the owner review queue.
-    // Presentation decides whether a result is actionable; execution remains approval-gated.
-    // This is review-only: approving a result never publishes or executes it.
-    for(const agent of agents){
-      const wf=await github.getWorkflowState(agent);
-      const run=wf?.lastRun;
-      if(wf?.lastSuccess && run?.id){
-        // Safe here (unlike the push-ingest path in ingest/review-result.js):
-        // by the time a dashboard load runs this, the run itself has already
-        // been reported completed by getWorkflowState, so its job logs are
-        // stable and this reconstruction cannot race the still-running job's
-        // own log finalization.
-        const review=await github.getWorkflowRunReview(run.id);
-        if(isNoActionReview(review?.reviewResult)){
-          // Idempotent: repeated dashboard loads while this remains the
-          // agent's latest run must never write a second audit row for it.
-          const claimed=await claimCommandIdempotency(context.env.CONTROL_DB,`review-result:no-action:${agent.id}:${run.id}`,agent.id,'AUTO_ARCHIVE_REVIEW');
-          if(claimed){
-            await writeAudit(context.env.CONTROL_DB,{timestamp:new Date().toISOString(),actor:'dashboard-reconciliation',agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id),autonomy:'GREEN',result:'auto-archived-no-action'});
-          }
-          continue;
-        }
-        const payload={agentId:agent.id,action:'REVIEW_RESULT',targetType:'workflow_run',targetId:String(run.id),targetRevision:String(run.id)};
-        const row=await ensureRunReviewApproval(context.env.CONTROL_DB,{...payload,id:crypto.randomUUID(),payloadHash:await targetHash(payload),status:'PENDING',createdAt:run.createdAt||new Date().toISOString()});
-        if(row) await maybeAutoRemediateGreenReport({approvalRow:row,db:context.env.CONTROL_DB,github});
-      }
-    }
+    // Push ingestion is the primary path for workflow review results. Do not
+    // synchronously fetch every agent's workflow logs while serving the dashboard:
+    // with multiple agents this can exceed the Pages Function request budget and
+    // leave the UI with blank summary counters. Historical/missed-run reconciliation
+    // must be handled out of band; the dashboard GET remains a bounded read path.
     const reconciledApprovals=await listPendingApprovals(context.env.CONTROL_DB);
     const state=await buildDashboardState({agents,github,pendingApprovals:reconciledApprovals,auditEvents:optional.auditEvents});
     state.githubDiagnostics=githubDiagnostics;
