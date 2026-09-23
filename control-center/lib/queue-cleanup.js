@@ -74,8 +74,22 @@ export function classifyPendingApproval({ approval, agentKnown, alreadyAutoArchi
 // Approval") holds continuously, not merely right after a one-time
 // migration. The full, expensive pass (fetchReviewResults=true, the
 // default) is for the explicit one-time historical cleanup only.
-export async function cleanupApprovalQueue({ db, github, agents, listPendingApprovals, getVideoJobStatus, fetchReviewResults = true }) {
+export async function cleanupApprovalQueue({ db, github, agents, listPendingApprovals, getVideoJobStatus, fetchReviewResults = true, skipFetchTargetIds }) {
   const agentIds = new Set((agents || []).map((a) => a.id));
+  // A single call only has budget (see the subrequest comment below) to
+  // reach so far into a large queue before every attempt after that point
+  // fails outright. Confirmed live in production: simply re-dispatching
+  // this same cleanup over and over made zero further progress once it
+  // stabilized, because the exact same early approvals (real content,
+  // correctly staying PENDING every time) always consume the same budget
+  // first, forever starving whatever comes after them. A caller that wants
+  // full coverage in one workflow run (the maintenance workflow does) tracks
+  // which target_ids already got an actual fetch attempt (successful or a
+  // genuine "no marker" result -- never one that failed on budget) across
+  // its own loop iterations and passes them back here, so each new call's
+  // budget goes toward approvals no call has reached yet instead of
+  // re-confirming ones already known.
+  const skipFetchSet = new Set((skipFetchTargetIds || []).map(String));
   const pending = await listPendingApprovals(db);
   // Oldest first: the earliest approval for a given logical (agent, target
   // type, target id) triple is the canonical one to KEEP; anything sharing
@@ -95,7 +109,14 @@ export async function cleanupApprovalQueue({ db, github, agents, listPendingAppr
     let fetchDiagnostic;
     if (agentKnown && approval.action === 'REVIEW_RESULT' && approval.targetType === 'workflow_run') {
       alreadyAutoArchived = await hasAuditResult(db, { agentId: approval.agentId, action: 'REVIEW_RESULT', targetId: approval.targetId, result: 'auto-archived-no-action' });
-      if (!alreadyAutoArchived && !isDuplicate && fetchReviewResults) {
+      if (!alreadyAutoArchived && !isDuplicate && fetchReviewResults && skipFetchSet.has(String(approval.targetId))) {
+        // A previous call this same workflow run already fetched this
+        // exact run's review data and found no reason to archive it (an
+        // approval this cleanup itself archives is REJECTED and so never
+        // reappears in listPendingApprovals) -- GENUINE is that already-
+        // established answer, not a guess, so this costs no subrequest.
+        fetchDiagnostic = 'skipped-already-checked-this-run';
+      } else if (!alreadyAutoArchived && !isDuplicate && fetchReviewResults) {
         try {
           // maxAttempts:1 / fetchArtifacts:false -- this loop processes
           // every PENDING approval in one Worker invocation, which has a

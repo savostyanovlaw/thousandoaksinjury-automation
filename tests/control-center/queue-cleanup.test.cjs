@@ -214,6 +214,37 @@ test('cleanupApprovalQueue: calls getWorkflowRunReview with maxAttempts:1 and fe
   assert.deepEqual(calls[0].options,{maxAttempts:1,fetchArtifacts:false});
 });
 
+// Regression: simply re-dispatching the maintenance workflow made zero
+// further progress in production once it stabilized, even though the queue
+// still held approvals that had never actually been fetched -- the same
+// early approvals (real content, correctly GENUINE every time) always
+// consume a single call's limited subrequest budget first, forever
+// starving whatever comes later in the stable createdAt-ascending sort.
+// skipFetchTargetIds lets a caller that loops across multiple calls (the
+// maintenance workflow does) tell this one not to re-spend budget
+// re-confirming approvals an earlier call in the same run already reached
+// with a real fetch -- their answer is already known (GENUINE, since
+// anything this cleanup archives leaves PENDING for good and so can never
+// reappear here) -- freeing that budget for approvals nothing has reached
+// yet.
+test('cleanupApprovalQueue: skipFetchTargetIds skips a live fetch for those targets without changing their classification',async()=>{
+  const db=createSqliteD1();
+  const {ensureControlSchema,listPendingApprovals}=await approvalStore();
+  const {cleanupApprovalQueue}=await queueCleanup();
+  await ensureControlSchema(db);
+  await seedApproval(db,{id:'ap-skip',agentId:'ctr-optimizer',targetId:'900300',createdAt:'2026-09-23T00:00:00Z'});
+  await seedApproval(db,{id:'ap-fetch',agentId:'ctr-optimizer',targetId:'900301',createdAt:'2026-09-23T00:01:00Z'});
+  let fetchCalls=0;
+  const github={async getWorkflowRunReview(){ fetchCalls++; return {reviewResult:{findingCount:1}}; }};
+  const result=await cleanupApprovalQueue({db,github,agents:AGENTS,listPendingApprovals,getVideoJobStatus:async()=>undefined,skipFetchTargetIds:['900300']});
+  assert.equal(fetchCalls,1,'the skipped target must never reach getWorkflowRunReview');
+  const byId=Object.fromEntries(result.results.map(r=>[r.approvalId,r]));
+  assert.equal(byId['ap-skip'].fetchDiagnostic,'skipped-already-checked-this-run');
+  assert.equal(byId['ap-skip'].classification,'GENUINE_OWNER_DECISION');
+  assert.equal(byId['ap-fetch'].fetchDiagnostic,'found');
+  assert.equal((await listPendingApprovals(db)).length,2,'skipping a fetch must never transition an approval out of PENDING on its own');
+});
+
 // An unknown/legacy agent's approval is cleaned up too.
 test('cleanupApprovalQueue: an approval for an agent no longer in the registry is INVALID_LEGACY_APPROVAL and transitioned out',async()=>{
   const db=createSqliteD1();

@@ -20,12 +20,23 @@ export async function onRequestPost(context){
     await ensureControlSchema(context.env.CONTROL_DB);
     const agents=await loadRegistry();
     const github=createGitHubAdapter({token:context.env.GITHUB_TOKEN});
+    // skipFetchTargetIds: optional list of workflow_run target_ids the
+    // caller already fetched successfully earlier in the same maintenance
+    // run (see queue-cleanup.js). A single Worker invocation cannot fetch
+    // every PENDING approval's review data in a large queue, so the
+    // maintenance workflow loops this call, accumulating this list itself,
+    // so each call's limited subrequest budget reaches approvals no earlier
+    // call in the same run has already resolved instead of re-spending it
+    // on the same early ones every time.
+    let skipFetchTargetIds;
+    try{ const body=await context.request.json(); skipFetchTargetIds=Array.isArray(body?.skipFetchTargetIds)?body.skipFetchTargetIds:undefined; }catch{ skipFetchTargetIds=undefined; }
     const result=await cleanupApprovalQueue({
       db:context.env.CONTROL_DB,
       github,
       agents,
       listPendingApprovals,
       getVideoJobStatus:async(db,id)=>(await getVideoJob(db,id))?.status,
+      skipFetchTargetIds,
     });
     return jsonResponse(result);
   }catch(error){ return errorResponse(error); }

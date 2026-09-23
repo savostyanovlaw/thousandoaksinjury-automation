@@ -35,17 +35,66 @@ jobs:
             echo "::error::CONTROL_CENTER_URL not configured; cannot run maintenance."
             exit 1
           fi
-          OIDC_TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=slc-ai-control-maintenance" | python3 -c "import json,sys; print(json.load(sys.stdin).get('value',''))")
-          if [ -z "$OIDC_TOKEN" ]; then
-            echo "::error::Could not obtain a GitHub OIDC token."
-            exit 1
-          fi
-          curl -sS -f -X POST "$CONTROL_CENTER_URL/api/control/maintenance/$ACTION" \
-            -H "Authorization: Bearer $OIDC_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{}' \
-            -o maintenance-result.json
-          python3 -m json.tool maintenance-result.json
+          # A single Cloudflare Worker invocation has a hard cap on outbound
+          # subrequests; cleanup-approval-queue re-fetches one GitHub job log
+          # per PENDING approval it doesn't already have an audit verdict
+          # for, so a large queue can exceed that cap partway through one
+          # call (confirmed live in production: "Too many subrequests by
+          # single Worker invocation"). Simply re-dispatching the same call
+          # does NOT make forward progress past that point on its own: the
+          # same early approvals (real content, correctly staying PENDING)
+          # always consume the budget first, forever starving whatever comes
+          # after them in the stable sort order -- confirmed live by two
+          # consecutive re-runs that produced zero further transitions.
+          #
+          # So each call accumulates which target_ids it has already
+          # successfully checked (a real fetch attempt that completed,
+          # whether it found a marker or not -- never one that failed on
+          # budget) and passes that list back on the next call via
+          # skipFetchTargetIds; the endpoint skips fetching those again
+          # (queue-cleanup.js already knows their answer is GENUINE, since
+          # anything it archives leaves PENDING for good) and spends its
+          # budget reaching approvals no call has reached yet. The loop
+          # stops once a whole pass produces no budget errors at all --
+          # everything that still needed a fetch got one -- or a bounded
+          # number of attempts is reached. Each attempt mints its own fresh,
+          # short-lived OIDC token, since one token would not outlive
+          # several sequential calls with real network latency between them.
+          echo '[]' > skip-fetch-target-ids.json
+          for attempt in $(seq 1 8); do
+            OIDC_TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=slc-ai-control-maintenance" | python3 -c "import json,sys; print(json.load(sys.stdin).get('value',''))")
+            if [ -z "$OIDC_TOKEN" ]; then
+              echo "::error::Could not obtain a GitHub OIDC token."
+              exit 1
+            fi
+            REQUEST_BODY=$(python3 -c "import json; print(json.dumps({'skipFetchTargetIds': json.load(open('skip-fetch-target-ids.json'))}))")
+            curl -sS -f -X POST "$CONTROL_CENTER_URL/api/control/maintenance/$ACTION" \
+              -H "Authorization: Bearer $OIDC_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "$REQUEST_BODY" \
+              -o maintenance-result.json
+            echo "attempt $attempt:"
+            python3 -m json.tool maintenance-result.json
+            HAD_BUDGET_ERROR=$(python3 - <<'PY'
+          import json
+          result = json.load(open('maintenance-result.json'))
+          skip = set(json.load(open('skip-fetch-target-ids.json')))
+          had_error = False
+          for r in result.get('results', []):
+              diag = r.get('fetchDiagnostic', '')
+              if diag in ('found', 'no-marker-found'):
+                  skip.add(str(r['targetId']))
+              elif diag.startswith('error:'):
+                  had_error = True
+          json.dump(sorted(skip), open('skip-fetch-target-ids.json', 'w'))
+          print('1' if had_error else '0')
+          PY
+          )
+            if [ "$HAD_BUDGET_ERROR" = "0" ]; then
+              echo "Converged: every approval needing a fetch this pass got one -- no budget errors."
+              break
+            fi
+          done
 
       - name: Upload maintenance result
         if: always()
