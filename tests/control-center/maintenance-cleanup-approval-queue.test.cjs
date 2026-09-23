@@ -66,6 +66,26 @@ test('onRequestPost runs the full cleanup with a real GitHub-shaped OIDC token s
     const wrongAudienceRequest=new Request('https://slc-ai-control.pages.dev/api/control/maintenance/cleanup-approval-queue',{method:'POST',headers:{authorization:`Bearer ${ingestToken}`},body:'{}'});
     const wrongAudienceResponse=await onRequestPost({request:wrongAudienceRequest,env:{CONTROL_DB:db,GITHUB_TOKEN:'x'}});
     assert.equal(wrongAudienceResponse.status,401);
+
+    // Regression: the maintenance workflow loops this endpoint across a
+    // large queue, accumulating which target_ids an earlier call already
+    // fetched successfully so a later call's limited subrequest budget can
+    // reach approvals nothing has checked yet instead of re-confirming the
+    // same early ones every time (see queue-cleanup.js). The endpoint must
+    // actually read skipFetchTargetIds out of the request body and pass it
+    // through. Reuses this test's own already-verified key/kid rather than
+    // minting a fresh one: jose's createRemoteJWKSet caches the JWKS
+    // response and, within its cooldown window, will not re-fetch for an
+    // unknown kid, so a second freshly-generated key pair in the same test
+    // file fails verification even with global.fetch mocked to serve it.
+    await insertApproval(db,{id:'ap-skipped',agentId:'ctr-optimizer',action:'REVIEW_RESULT',targetType:'workflow_run',targetId:'900400',targetRevision:'900400',payloadHash:'h',createdAt:NOW});
+    const skipToken=await signTestToken(privateKey,kid,{audience:'slc-ai-control-maintenance',claims:{run_id:'88890',workflow:'Control Center Maintenance'}});
+    const skipRequest=new Request('https://slc-ai-control.pages.dev/api/control/maintenance/cleanup-approval-queue',{method:'POST',headers:{authorization:`Bearer ${skipToken}`},body:JSON.stringify({skipFetchTargetIds:['900400']})});
+    const skipResponse=await onRequestPost({request:skipRequest,env:{CONTROL_DB:db,GITHUB_TOKEN:'x'}});
+    assert.equal(skipResponse.status,200);
+    const skipBody=await skipResponse.json();
+    const skippedRow=skipBody.results.find(r=>r.targetId==='900400');
+    assert.equal(skippedRow.fetchDiagnostic,'skipped-already-checked-this-run','a real GitHub fetch was never attempted for this target -- proves skipFetchTargetIds reached cleanupApprovalQueue');
   }finally{
     global.fetch=originalFetch;
   }
