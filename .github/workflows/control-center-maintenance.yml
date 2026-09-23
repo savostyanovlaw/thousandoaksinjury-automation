@@ -35,17 +35,41 @@ jobs:
             echo "::error::CONTROL_CENTER_URL not configured; cannot run maintenance."
             exit 1
           fi
-          OIDC_TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=slc-ai-control-maintenance" | python3 -c "import json,sys; print(json.load(sys.stdin).get('value',''))")
-          if [ -z "$OIDC_TOKEN" ]; then
-            echo "::error::Could not obtain a GitHub OIDC token."
-            exit 1
-          fi
-          curl -sS -f -X POST "$CONTROL_CENTER_URL/api/control/maintenance/$ACTION" \
-            -H "Authorization: Bearer $OIDC_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{}' \
-            -o maintenance-result.json
-          python3 -m json.tool maintenance-result.json
+          # A single Cloudflare Worker invocation has a hard cap on outbound
+          # subrequests; cleanup-approval-queue re-fetches one GitHub job log
+          # per PENDING approval it doesn't already have an audit verdict
+          # for, so a large queue can exceed that cap partway through one
+          # call (confirmed live in production: "Too many subrequests by
+          # single Worker invocation"). This is not a bug to fix once --
+          # every remediated approval leaves PENDING permanently (the
+          # atomic decideApproval guard), so calling again always gets a
+          # fresh subrequest budget and makes forward progress on whatever
+          # is left. Loop calls until two consecutive calls report the same
+          # total PENDING count (no further transitions happened) or a
+          # bounded number of attempts is reached, so a fresh OIDC token
+          # backs every call (each is short-lived) and one workflow run
+          # converges the whole queue instead of requiring manual reruns.
+          PREV_TOTAL=""
+          for attempt in $(seq 1 8); do
+            OIDC_TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=slc-ai-control-maintenance" | python3 -c "import json,sys; print(json.load(sys.stdin).get('value',''))")
+            if [ -z "$OIDC_TOKEN" ]; then
+              echo "::error::Could not obtain a GitHub OIDC token."
+              exit 1
+            fi
+            curl -sS -f -X POST "$CONTROL_CENTER_URL/api/control/maintenance/$ACTION" \
+              -H "Authorization: Bearer $OIDC_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{}' \
+              -o maintenance-result.json
+            TOTAL=$(python3 -c "import json; print(json.load(open('maintenance-result.json')).get('total',''))")
+            echo "attempt $attempt: total=$TOTAL"
+            python3 -m json.tool maintenance-result.json
+            if [ "$TOTAL" = "$PREV_TOTAL" ]; then
+              echo "Converged: total unchanged from the previous attempt."
+              break
+            fi
+            PREV_TOTAL="$TOTAL"
+          done
 
       - name: Upload maintenance result
         if: always()
