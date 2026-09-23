@@ -133,6 +133,28 @@ ${x.body||''}`.toLowerCase().includes(String(marker).toLowerCase()))
         await json(`https://api.github.com/repos/${REPO}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs})});
         return {ok:true,workflow};
       }
+      // The owner has already reviewed and approved this exact before/after
+      // diff in Content Refresher's own draft (requiresAttorneyReview was
+      // true, approvalState PENDING) -- this applies ONLY that reviewed text
+      // to the real page and opens a PR, never merges (content is always
+      // YELLOW/owner-merge-only; see content-page-apply.yml, which refuses
+      // to touch the file at all unless the reviewed "before" text still
+      // matches the current page exactly once).
+      if(job.remediationAgentId==='content-page-editor'){
+        const workflow='content-page-apply.yml';
+        const raw=job.rawFinding||{};
+        const diff=raw.diff||{};
+        const inputs={
+          job_id:String(job.id),
+          page_url:String(raw.page||'').slice(0,500),
+          before:String(diff.before||'').slice(0,20000),
+          after:String(diff.after||'').slice(0,20000),
+          issue:String(raw.issue||job.summary||'').slice(0,500),
+          source_run_id:String(job.sourceRunId)
+        };
+        await json(`https://api.github.com/repos/${REPO}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs})});
+        return {ok:true,workflow};
+      }
       const workflow='remediation-preparer.yml';
       const raw=job.rawFinding||{};
       const inputs={job_id:String(job.id),source_agent_id:String(job.sourceAgentId),source_run_id:String(job.sourceRunId),finding_type:String(job.findingType),summary:String(job.summary).slice(0,500),recommended_action:String(job.recommendedAction).slice(0,500),autonomy:String(job.autonomy||'YELLOW')};

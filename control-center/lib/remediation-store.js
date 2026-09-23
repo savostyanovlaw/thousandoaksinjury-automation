@@ -119,9 +119,20 @@ export async function countRecentRemediationFailures(db,{sourceAgentId,findingTy
 // stuck operational condition -- the workflow that was supposed to verify
 // and report back crashed, timed out, or lost its runner. This must be
 // visible, not silently forgotten.
+//
+// DISPATCHED is only a stuck condition for a GREEN job: GREEN is the only
+// autonomy that ever progresses itself past DISPATCHED (remediation-
+// preparer.yml's merge/verify/report steps are gated on autonomy=='GREEN'
+// -- see that workflow's own comment: "A YELLOW job's terminal state is
+// exactly what it always was: an open, unmerged PR waiting for a human to
+// review and merge it themselves."). Flagging a YELLOW job stuck at
+// DISPATCHED would falsely tell the owner every single one of their own
+// not-yet-merged remediation PRs "did not report a final result", forever,
+// since nothing about a YELLOW job's real success path ever reports back to
+// this table at all.
 export async function listStuckRemediationJobs(db,thresholdMinutes=20){
   await ensureRemediationSchema(db);
   const cutoff=new Date(Date.now()-thresholdMinutes*60000).toISOString();
-  const {results=[]}=await db.prepare(`SELECT id,source_agent_id sourceAgentId,finding_type findingType,status,updated_at updatedAt FROM remediation_jobs WHERE status IN ('DISPATCHED','MERGED') AND updated_at < ? ORDER BY updated_at ASC`).bind(cutoff).all();
+  const {results=[]}=await db.prepare(`SELECT id,source_agent_id sourceAgentId,finding_type findingType,status,updated_at updatedAt FROM remediation_jobs WHERE ((status='DISPATCHED' AND autonomy='GREEN') OR status='MERGED') AND updated_at < ? ORDER BY updated_at ASC`).bind(cutoff).all();
   return results;
 }
