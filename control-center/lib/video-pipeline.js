@@ -1,4 +1,4 @@
-import { createVideoJob, updateVideoJob, getVideoJobByScriptApproval, listVideoJobsByStatus } from './video-store.js';
+import { createVideoJob, updateVideoJob, getVideoJob, getVideoJobByScriptApproval, listVideoJobsByStatus } from './video-store.js';
 import { insertApproval } from './approval-store.js';
 import { targetHash } from './approvals.js';
 
@@ -69,5 +69,38 @@ export async function pollRenderingVideoJobs({db,heygen}){
     }else{
       await updateVideoJob(db,job.id,'RENDER_FAILED',{error:result.error||'HeyGen reported a failed render'});
     }
+  }
+}
+
+// Stage 2: called only from a PUBLISH_VIDEO/video_job approval's own
+// Approve decision (see approvals/[id].js) -- a completely separate,
+// later, revision-bound decision from Stage 1's script approval. The
+// approval's own atomic PENDING->APPROVED claim (decideApproval) is what
+// guarantees this runs at most once per approval, exactly like every other
+// RED/approval-gated action in this file; there is no second guard here
+// because a video_job only ever has one PUBLISH_VIDEO approval created for
+// it in the first place (see pollRenderingVideoJobs above).
+export async function publishVideo({record,db,youtube}){
+  const job=await getVideoJob(db,record.targetId);
+  if(!job) throw new Error('Video job not found');
+  if(!youtube?.configured){
+    // A genuine, precisely identifiable external blocker -- never a
+    // fabricated publish result.
+    await updateVideoJob(db,job.id,'BLOCKED_YOUTUBE_CONFIGURATION',{});
+    return {...job,status:'BLOCKED_YOUTUBE_CONFIGURATION'};
+  }
+  await updateVideoJob(db,job.id,'PUBLISHING',{});
+  try{
+    // privacyStatus is never passed here -- uploadVideo's own default
+    // ('private') is what every real publish through this code path gets.
+    // Making a video public is a separate, explicit owner action taken
+    // directly in YouTube Studio, never something this pipeline decides.
+    const {videoId,url}=await youtube.uploadVideo({videoUrl:job.videoUrl,title:job.title,description:job.script});
+    await updateVideoJob(db,job.id,'PUBLISHED',{youtubeVideoId:videoId,youtubeUrl:url});
+    return {...job,status:'PUBLISHED',youtubeVideoId:videoId,youtubeUrl:url};
+  }catch(error){
+    const message=String(error?.message||error).slice(0,300);
+    await updateVideoJob(db,job.id,'PUBLISH_FAILED',{error:message});
+    return {...job,status:'PUBLISH_FAILED',lastError:message};
   }
 }
