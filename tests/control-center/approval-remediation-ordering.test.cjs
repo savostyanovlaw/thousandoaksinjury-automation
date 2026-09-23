@@ -28,7 +28,7 @@ function fakeDb({legacyUniqueSchema=false}={}){
           if(/^DROP TABLE remediation_jobs/i.test(trimmed)) return {meta:{changes:0}};
           if(/^ALTER TABLE remediation_jobs_migrated RENAME/i.test(trimmed)) return {meta:{changes:0}};
           if(/^UPDATE approvals SET status/i.test(trimmed)){
-            const [status,,,id]=args;
+            const [status,,,,id]=args;
             const row=approvals[id];
             if(!row || row.status!=='PENDING') return {meta:{changes:0}};
             row.status=status; return {meta:{changes:1}};
