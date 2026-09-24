@@ -31,6 +31,9 @@ def suggest_title(slug,city):
 
 def suggest_description(slug,city):
  topic=slug.replace('-',' ') if slug and slug!='home' else 'injury'
+ # City landing-page slugs describe geography, not a claim type.
+ if topic.casefold()==city.casefold():
+  topic='injury'
  # Avoid fragile a/an grammar and mechanical lower-case city substitutions.
  candidate=f'Discuss your {topic} claim directly with a personal injury attorney serving {city}. Free consultation; English and Russian.'
  return candidate[:160].rstrip(' ,.;')+'.' if len(candidate)>160 else candidate
