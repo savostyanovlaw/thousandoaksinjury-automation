@@ -1,0 +1,30 @@
+name: Client Acquisition CEO
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '20 16 * * *'
+  pull_request:
+    paths:
+      - 'scripts/client_acquisition_ceo.py'
+      - '.github/workflows/client-acquisition-ceo.yml'
+permissions:
+  contents: read
+jobs:
+  prioritize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build lead-acquisition priority report
+        run: |
+          mkdir -p artifacts/client-acquisition-ceo
+          test -f artifacts/client-acquisition-ceo/input.json || echo '[]' > artifacts/client-acquisition-ceo/input.json
+          python -m scripts.client_acquisition_ceo artifacts/client-acquisition-ceo/input.json artifacts/client-acquisition-ceo/report.json
+          cat artifacts/client-acquisition-ceo/report.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client-acquisition-ceo-report
+          path: artifacts/client-acquisition-ceo/report.json
+          retention-days: 30
