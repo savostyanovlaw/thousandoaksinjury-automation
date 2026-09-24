@@ -67,4 +67,17 @@ class CtrOptimizerTests(unittest.TestCase):
         self.assertNotIn('Ru Personal Injury Lawyer',proposals)
         self.assertNotIn('Ru personal injury attorney',proposals)
 
+    def test_city_description_is_grammar_and_case_safe(self):
+        d=agent.suggest_description('agoura-hills','Agoura Hills')
+        self.assertNotIn('a Agoura Hills',d)
+        self.assertNotIn('agoura hills claim',d)
+        self.assertIn('Agoura Hills',d)
+
+    def test_russian_page_keeps_russian_metadata(self):
+        html='<html><head><title>'+('Очень длинный русский заголовок для страницы адвоката по травмам и автомобильным авариям в Калифорнии')+'</title></head></html>'
+        r=agent.analyze_html('/ru/',html,'California')
+        values=' '.join(p['proposedValue'] for p in r['proposals'])
+        self.assertTrue(agent._is_cyrillic(values))
+        self.assertNotIn('California Personal Injury Lawyer',values)
+
 if __name__=='__main__': unittest.main()

@@ -7,6 +7,12 @@ from pathlib import Path
 
 LANGUAGE_DIRECTORIES={'ru'}
 
+def _is_cyrillic(text):
+ return any('\u0400' <= ch <= '\u04ff' for ch in (text or ''))
+
+def _language(title,desc,path):
+ return 'ru' if path.startswith('/ru/') or _is_cyrillic(title+' '+desc) else 'en'
+
 class HeadParser(HTMLParser):
  def __init__(self):
   super().__init__();self.title='';self.description='';self._title=False;self._buf=[]
@@ -24,9 +30,19 @@ def suggest_title(slug,city):
  return candidate if len(candidate)<=60 else f'{city} Injury Lawyer | Savostyanov Law'[:60].rstrip()
 
 def suggest_description(slug,city):
- topic=slug.replace('-',' ') if slug and slug!='home' else 'personal injury'
- candidate=f'Speak directly with a {city} personal injury attorney about your {topic} claim, insurance issues, evidence, and available next steps.'
+ topic=slug.replace('-',' ') if slug and slug!='home' else 'injury'
+ # City landing-page slugs describe geography, not a claim type.
+ if topic.casefold()==city.casefold():
+  topic='injury'
+ # Avoid fragile a/an grammar and mechanical lower-case city substitutions.
+ candidate=f'Discuss your {topic} claim directly with a personal injury attorney serving {city}. Free consultation; English and Russian.'
  return candidate[:160].rstrip(' ,.;')+'.' if len(candidate)>160 else candidate
+
+def suggest_ru_description():
+ return 'Консультация адвоката по делам о травмах и ДТП в Калифорнии. Прямой контакт с адвокатом. Бесплатная консультация на русском и английском.'
+
+def suggest_ru_title():
+ return 'Адвокат по травмам и ДТП в Калифорнии | Savostyanov Law'
 
 def _proposal(field,current,proposed,rationale):
  return {'field':field,'currentValue':current,'proposedValue':proposed,'rationale':rationale}
@@ -42,8 +58,9 @@ def analyze_html(path,html,city='Thousand Oaks',performance=None):
  slug=path.strip('/').split('/')[-1] or 'home'
  title_issue=any(x in issues for x in ('missing_title','title_too_short','title_too_long'))
  description_issue=any(x in issues for x in ('missing_meta_description','description_too_short','description_too_long'))
- suggested_title=suggest_title(slug,city) if title_issue else None
- suggested_description=suggest_description(slug,city) if description_issue else None
+ lang=_language(title,desc,path)
+ suggested_title=(suggest_ru_title() if lang=='ru' else suggest_title(slug,city)) if title_issue else None
+ suggested_description=(suggest_ru_description() if lang=='ru' else suggest_description(slug,city)) if description_issue else None
  if title_issue:
   proposals.append(_proposal('title',title,suggested_title,'Title metadata needs a safer search-result candidate.'))
  if description_issue:
@@ -53,7 +70,7 @@ def analyze_html(path,html,city='Thousand Oaks',performance=None):
   impressions=float(perf.get('impressions') or 0);ctr=float(perf.get('ctr') or 0);position=float(perf.get('position') or 0)
   if impressions>=100 and 0<position<=10 and ctr<0.02:
    issues.append('low_ctr_opportunity')
-   performance_title=suggest_title(slug,city)
+   performance_title=suggest_ru_title() if lang=='ru' else suggest_title(slug,city)
    proposals.append(_proposal('title',title,performance_title,f'CTR opportunity: {ctr:.2%} CTR across {int(impressions)} impressions at average position {position:g}; review title relevance to query intent.'))
    if suggested_title is None:suggested_title=performance_title
  return {'path':path,'mode':'PROPOSAL_ONLY','publishAllowed':False,'currentTitle':title,'currentDescription':desc,'issues':issues,'proposals':proposals,'performance':perf,'suggestedTitle':suggested_title,'suggestedDescription':suggested_description}
