@@ -38,6 +38,10 @@ class OpportunityFinderTests(unittest.TestCase):
         self.assertEqual(finding['priority'],'HIGH')
         self.assertIn('retry',finding['recommendedAction'].lower())
 
+    def test_structural_findings_remain_distinct_from_content_findings(self):
+        self.assertNotEqual(agent.RULES["h1_count"][2], agent.RULES["thin_content"][2])
+        self.assertIn("internal links", agent.RULES["weak_internal_linking"][2].lower())
+
     def test_topic_for_practice_area_page_is_a_real_legal_topic_not_the_issue_type(self):
         topic,city=agent.topic_and_city_for_url('https://thousandoaksinjury.com/dog-bite-lawyer/')
         self.assertEqual(topic,'dog bite')

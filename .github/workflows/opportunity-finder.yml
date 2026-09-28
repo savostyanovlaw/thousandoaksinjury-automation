@@ -107,7 +107,14 @@ jobs:
           if not findings:
               print("No actionable finding; downstream draft not dispatched.")
               raise SystemExit(0)
-          finding=findings[0]
+          # Route only findings for which Content Creator is the right executor.
+          # Structural defects and link gaps must not create generic PI articles.
+          CONTENT_ISSUES={"thin_content"}
+          candidates=[f for f in findings if f.get("type") in CONTENT_ISSUES]
+          if not candidates:
+              print("Findings exist, but none require new content; no Content Creator dispatch.")
+              raise SystemExit(0)
+          finding=candidates[0]
           url=finding["url"]
           issue=finding["type"]
           # The finding's "type" is a technical SEO defect (h1_count,
