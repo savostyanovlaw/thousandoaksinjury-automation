@@ -136,7 +136,17 @@ document.addEventListener('DOMContentLoaded', function () {
     window.dataLayer = window.dataLayer || [];
     window.gtag = window.gtag || function () { window.dataLayer.push(arguments); };
     window.gtag('js', new Date());
-    window.gtag('config', GA_ID);
+    var cleanReferrer = '';
+    try {
+      if (document.referrer) {
+        var referrer = new URL(document.referrer);
+        cleanReferrer = referrer.origin + referrer.pathname;
+      }
+    } catch (error) {}
+    window.gtag('config', GA_ID, {
+      page_location: location.origin + location.pathname,
+      page_referrer: cleanReferrer
+    });
     var script = document.createElement('script');
     script.async = true;
     script.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(GA_ID);
@@ -317,7 +327,7 @@ document.addEventListener('DOMContentLoaded', function () {
       }).then(function () {
         form.reset();
         status.textContent = messages.success;
-        if (typeof window.gtag === 'function') window.gtag('event', 'generate_lead', { event_category: 'case_review', page_location: window.location.href });
+        if (typeof window.toiTrackEvent === 'function') window.toiTrackEvent('generate_lead');
       }).catch(function (error) {
         var fields = error.payload && error.payload.code === 'VALIDATION_ERROR' && error.payload.fields;
         if (fields) {

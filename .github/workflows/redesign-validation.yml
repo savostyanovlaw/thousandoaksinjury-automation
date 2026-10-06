@@ -27,7 +27,7 @@ jobs:
       - name: Run redesign unit tests
         run: python3 -m unittest discover -s tests -v
       - name: Run case-review endpoint tests
-        run: node --test tests/case-review-endpoint.test.mjs
+        run: node --test tests/case-review-endpoint.test.mjs tests/lead-events.test.cjs
       - name: Run static site validator
         run: python3 scripts/validate_site.py --root website
       - name: Install Playwright package and browsers

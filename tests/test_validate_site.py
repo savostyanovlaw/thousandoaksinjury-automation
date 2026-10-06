@@ -15,6 +15,12 @@ ROUTES = {
     "/simi-valley/": "simi-valley/index.html",
     "/westlake-village/": "westlake-village/index.html",
     "/ru/": "ru/index.html",
+    "/dog-bite-lawyer/": "dog-bite-lawyer/index.html",
+    "/slip-and-fall-lawyer/": "slip-and-fall-lawyer/index.html",
+    "/wrongful-death-lawyer/": "wrongful-death-lawyer/index.html",
+    "/motorcycle-accident-lawyer/": "motorcycle-accident-lawyer/index.html",
+    "/attorney/alexey-savostyanov/": "attorney/alexey-savostyanov/index.html",
+    "/videos/": "videos/index.html",
 }
 
 
