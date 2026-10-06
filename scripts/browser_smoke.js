@@ -9,6 +9,10 @@ const routes = [
   ['newbury-park', '/newbury-park/'],
   ['agoura-hills', '/agoura-hills/'],
   ['russian', '/ru/'],
+  ['dog-bite', '/dog-bite-lawyer/'],
+  ['slip-and-fall', '/slip-and-fall-lawyer/'],
+  ['wrongful-death', '/wrongful-death-lawyer/'],
+  ['motorcycle', '/motorcycle-accident-lawyer/'],
   ['not-found', '/404.html'],
 ];
 const widths = [360, 390, 768, 1024, 1440];

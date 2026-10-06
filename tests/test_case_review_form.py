@@ -24,7 +24,7 @@ class CaseReviewFormContractTests(unittest.TestCase):
         self.assertIn("forms.thousandoaksinjury.com", source)
 
     def test_existing_english_and_russian_forms_have_required_intake_fields(self):
-        self.assertEqual(len(self.form_pages), 11)
+        self.assertEqual(len(self.form_pages), 13)
         for html in self.form_pages:
             with self.subTest(language="page"):
                 self.assertIn('data-form-integration="pending"', html)

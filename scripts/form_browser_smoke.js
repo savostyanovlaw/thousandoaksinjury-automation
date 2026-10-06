@@ -11,6 +11,10 @@ const routes = [
   '/simi-valley/',
   '/camarillo/',
   '/ru/',
+  '/dog-bite-lawyer/',
+  '/slip-and-fall-lawyer/',
+  '/wrongful-death-lawyer/',
+  '/motorcycle-accident-lawyer/',
 ];
 const widths = [390, 1440];
 const availableEngines = { chromium, firefox, webkit };
