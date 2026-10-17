@@ -16,7 +16,9 @@ const routes = [
   ['not-found', '/404.html'],
 ];
 const widths = [360, 390, 768, 1024, 1440];
-const engines = { chromium, firefox, webkit };
+const availableEngines = { chromium, firefox, webkit };
+const engines = Object.fromEntries((process.env.BROWSER_ENGINES || Object.keys(availableEngines).join(','))
+  .split(',').map(name => name.trim()).filter(Boolean).map(name => [name, availableEngines[name]]));
 const outDir = path.join(process.cwd(), 'artifacts', 'browser');
 fs.mkdirSync(outDir, { recursive: true });
 

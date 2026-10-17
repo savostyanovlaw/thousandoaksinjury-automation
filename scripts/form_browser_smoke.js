@@ -17,6 +17,18 @@ const routes = [
   '/motorcycle-accident-lawyer/',
 ];
 const widths = [390, 1440];
+
+/* Intake fields must match exactly; attribution and timing fields are added by
+   the page script and are checked for shape only. */
+function sameIntake(actual, expected, route) {
+  if (!actual) return false;
+  const { elapsed_ms: elapsed, landing_page: landing, ...core } = actual;
+  for (const key of Object.keys(core)) if (/^(utm_|gclid|referrer)/.test(key)) delete core[key];
+  const sorted = obj => JSON.stringify(Object.keys(obj).sort().map(k => [k, obj[k]]));
+  if (sorted(core) !== sorted(expected)) return false;
+  if (route === undefined) return elapsed === undefined && landing === undefined;
+  return /^\d+$/.test(elapsed || '') && landing === route;
+}
 const availableEngines = { chromium, firefox, webkit };
 const requestedEngines = (process.env.BROWSER_ENGINES || Object.keys(availableEngines).join(','))
   .split(',')
@@ -88,14 +100,14 @@ const requestedEngines = (process.env.BROWSER_ENGINES || Object.keys(availableEn
         if (!response || response.status() >= 400 ||
             !contract.action.endsWith('/api/case-review') ||
             contract.method !== 'post' || !contract.valid ||
-            JSON.stringify(contract.values) !== JSON.stringify(expected) ||
+            !sameIntake(contract.values, { ...expected, language: route === '/ru/' ? 'ru' : 'en' }) ||
             !submission || submission.method !== 'POST' ||
             submissionCount !== 1 ||
-            JSON.stringify(submission.fields) !== JSON.stringify({
+            !sameIntake(submission.fields, {
               ...expected,
               page: `${base}${route}`,
               language: route === '/ru/' ? 'ru' : 'en',
-            })) {
+            }, route)) {
           failures.push({ engineName, route, width, status: response && response.status(), contract, submission });
         }
         await page.close();

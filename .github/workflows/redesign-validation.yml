@@ -27,7 +27,7 @@ jobs:
       - name: Run redesign unit tests
         run: python3 -m unittest discover -s tests -v
       - name: Run case-review endpoint tests
-        run: node --test tests/case-review-endpoint.test.mjs tests/lead-events.test.cjs
+        run: node --test tests/case-review-endpoint.test.mjs tests/intake-health.test.mjs tests/lead-events.test.cjs
       - name: Run static site validator
         run: python3 scripts/validate_site.py --root website
       - name: Install Playwright package and browsers
@@ -43,11 +43,15 @@ jobs:
         run: node scripts/browser_smoke.js
       - name: Run cross-browser form payload smoke test
         run: node scripts/form_browser_smoke.js
+      - name: Run end-to-end intake test (real Pages Function, test mailbox)
+        run: node scripts/intake_e2e.mjs
       - name: Upload browser screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: premium-redesign-browser-screenshots
-          path: artifacts/browser/
+          path: |
+            artifacts/browser/
+            artifacts/intake-e2e/
           if-no-files-found: ignore
           retention-days: 14

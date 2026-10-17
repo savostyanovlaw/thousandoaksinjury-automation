@@ -28,6 +28,7 @@
   ]
 }
 </script>
+<script>document.documentElement.classList.add('js-reveal');setTimeout(function(){if(!window.toiRevealReady)document.documentElement.classList.remove('js-reveal')},3000)</script>
 </head>
 <body>
 <a class="skip-link" href="#main">Перейти к основному содержанию</a>
@@ -176,14 +177,14 @@
       <p class="measure">Позвоните или напишите по электронной почте. Запросы рассматриваются напрямую фирмой; отправка сообщения сама по себе не создаёт отношения адвокат–клиент.</p>
       <p><strong>Телефон:</strong> <a href="tel:+18182138798">(818) 213-8798</a><br><strong>Электронная почта:</strong> <a href="mailto:attorney@savostyanovlaw.com">attorney@savostyanovlaw.com</a></p>
     </div>
-    <form data-form-integration="pending" aria-describedby="form-status">
-      <label>Имя и фамилия<input type="text" name="name" autocomplete="name" required></label>
-      <label>Телефон<input type="tel" name="phone" autocomplete="tel" required></label>
-      <label>Электронная почта<input type="email" name="email" autocomplete="email" required></label>
-      <label>Кратко опишите ситуацию<textarea name="message" required></textarea></label>
-      <button class="btn btn-primary" type="button" aria-disabled="true">Запросить бесплатную консультацию</button>
-      <p class="fine-print" id="form-status">Защищённая онлайн-форма загружается. Если нужна срочная помощь, позвоните или напишите в фирму.</p>
-    </form>
+    <form data-form-integration="pending" aria-describedby="form-status" action="/api/case-review" method="post">
+      <label>Имя и фамилия<input type="text" name="name" autocomplete="name" maxlength="120" required></label>
+      <label>Телефон<input type="tel" name="phone" autocomplete="tel" maxlength="60" required></label>
+      <label>Электронная почта (необязательно)<input type="email" name="email" autocomplete="email" maxlength="254"></label>
+      <label>Кратко опишите ситуацию<textarea name="message" maxlength="6000" required></textarea></label>
+      <button class="btn btn-primary" type="submit" aria-describedby="form-status">Запросить бесплатную консультацию</button>
+      <p class="fine-print" id="form-status">Защищённая онлайн-форма. Не используйте её, если срок может истечь до ответа фирмы; позвоните по номеру (818) 213-8798.</p>
+    <input type="hidden" name="language" value="ru"><div class="hp-field" aria-hidden="true" style="position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden"><label>Website<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div></form>
   </div>
 </section>
 </main>
