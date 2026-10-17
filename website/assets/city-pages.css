@@ -248,3 +248,15 @@ h3 { color: var(--ink-deep); }
   }
   .reveal { opacity: 1; transform: none; }
 }
+
+/* P0 PI leads (#155): show the phone number in the mobile call bar and keep first-visit
+   consent choices from covering page calls-to-action on phones. */
+.mobile-action-bar a { flex-direction: column; line-height: 1.25; }
+.mobile-action-number { display: block; margin-top: 3px; font-size: .86rem; font-weight: 800; letter-spacing: .02em; text-transform: none; font-variant-numeric: tabular-nums; }
+@media (max-width: 720px) {
+  .cookie-banner { bottom: 66px; gap: 10px; padding: 12px 14px; }
+  .cookie-banner__text, .cookie-banner p { font-size: .8rem; line-height: 1.45; }
+  .cookie-banner__actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .cookie-banner__actions .cookie-btn { width: 100%; min-height: 44px; padding: 8px 10px; font-size: .86rem; }
+  .cookie-banner__actions [data-cookie-manage] { grid-column: 1 / -1; order: 3; border-color: transparent; text-decoration: underline; }
+}

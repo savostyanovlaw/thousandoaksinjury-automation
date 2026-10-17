@@ -69,20 +69,49 @@ document.addEventListener('DOMContentLoaded', function () {
     revealItems.forEach(function (item) { observer.observe(item); });
   }
 
-  /* Consent UI is created here so legacy and redesigned pages share one implementation. */
+  /* Consent UI is created here so legacy and redesigned pages share one implementation.
+     Russian pages get Russian consent text; choices and storage are identical in both languages. */
+  var consentText = (document.documentElement.lang || '').toLowerCase().indexOf('ru') === 0 ? {
+    region: 'Уведомление о cookie',
+    title: 'Файлы cookie',
+    body: 'Мы используем необходимые cookie для работы сайта. Аналитические cookie помогают понять посещаемость сайта и используются только с вашего согласия.',
+    reject: 'Отклонить все',
+    manage: 'Настроить',
+    accept: 'Принять все',
+    modalTitle: 'Настройки cookie',
+    modalBody: 'Вы можете принять или отклонить необязательные аналитические cookie. Необходимые cookie всегда включены, так как без них сайт не работает.',
+    necessary: 'Необходимые cookie',
+    analytics: 'Аналитические cookie',
+    marketing: 'Маркетинговые cookie',
+    save: 'Сохранить настройки'
+  } : {
+    region: 'Cookie notice',
+    title: 'Cookie Notice',
+    body: 'We use necessary cookies to run this website. Analytics cookies help us understand website traffic and are used only if you allow them.',
+    reject: 'Reject All',
+    manage: 'Manage Preferences',
+    accept: 'Accept All',
+    modalTitle: 'Cookie Preferences',
+    modalBody: 'You can accept or reject optional analytics cookies. Necessary cookies are always active because the website needs them to function.',
+    necessary: 'Necessary cookies',
+    analytics: 'Analytics cookies',
+    marketing: 'Marketing cookies',
+    save: 'Save Preferences'
+  };
+
   if (!document.getElementById('cookie-banner')) {
     var banner = document.createElement('div');
     banner.id = 'cookie-banner';
     banner.className = 'cookie-banner';
     banner.setAttribute('role', 'region');
-    banner.setAttribute('aria-label', 'Cookie notice');
+    banner.setAttribute('aria-label', consentText.region);
     banner.innerHTML =
-      '<div class="cookie-banner__text"><strong>Cookie Notice</strong><br>' +
-      'We use necessary cookies to run this website. Analytics cookies help us understand website traffic and are used only if you allow them.</div>' +
+      '<div class="cookie-banner__text"><strong>' + consentText.title + '</strong><br>' +
+      consentText.body + '</div>' +
       '<div class="cookie-banner__actions">' +
-      '<button type="button" class="cookie-btn cookie-btn--secondary" data-cookie-reject-all>Reject All</button>' +
-      '<button type="button" class="cookie-btn cookie-btn--secondary" data-cookie-manage>Manage Preferences</button>' +
-      '<button type="button" class="cookie-btn cookie-btn--primary" data-cookie-accept-all>Accept All</button></div>';
+      '<button type="button" class="cookie-btn cookie-btn--secondary" data-cookie-reject-all>' + consentText.reject + '</button>' +
+      '<button type="button" class="cookie-btn cookie-btn--secondary" data-cookie-manage>' + consentText.manage + '</button>' +
+      '<button type="button" class="cookie-btn cookie-btn--primary" data-cookie-accept-all>' + consentText.accept + '</button></div>';
     document.body.appendChild(banner);
   }
 
@@ -92,15 +121,15 @@ document.addEventListener('DOMContentLoaded', function () {
     modal.className = 'cookie-modal';
     modal.innerHTML =
       '<div class="cookie-modal__panel" role="dialog" aria-modal="true" aria-labelledby="cookie-modal-title" tabindex="-1">' +
-      '<h2 id="cookie-modal-title">Cookie Preferences</h2>' +
-      '<p>You can accept or reject optional analytics cookies. Necessary cookies are always active because the website needs them to function.</p>' +
-      '<label class="cookie-toggle"><input type="checkbox" checked disabled> Necessary cookies</label>' +
-      '<label class="cookie-toggle"><input id="consent-analytics" type="checkbox"> Analytics cookies</label>' +
-      '<label class="cookie-toggle"><input id="consent-marketing" type="checkbox"> Marketing cookies</label>' +
+      '<h2 id="cookie-modal-title">' + consentText.modalTitle + '</h2>' +
+      '<p>' + consentText.modalBody + '</p>' +
+      '<label class="cookie-toggle"><input type="checkbox" checked disabled> ' + consentText.necessary + '</label>' +
+      '<label class="cookie-toggle"><input id="consent-analytics" type="checkbox"> ' + consentText.analytics + '</label>' +
+      '<label class="cookie-toggle"><input id="consent-marketing" type="checkbox"> ' + consentText.marketing + '</label>' +
       '<div class="cookie-modal__actions">' +
-      '<button type="button" class="cookie-btn cookie-btn--secondary" data-cookie-reject-all>Reject All</button>' +
-      '<button type="button" class="cookie-btn cookie-btn--primary" data-cookie-save>Save Preferences</button>' +
-      '<button type="button" class="cookie-btn cookie-btn--primary" data-cookie-accept-all>Accept All</button></div></div>';
+      '<button type="button" class="cookie-btn cookie-btn--secondary" data-cookie-reject-all>' + consentText.reject + '</button>' +
+      '<button type="button" class="cookie-btn cookie-btn--primary" data-cookie-save>' + consentText.save + '</button>' +
+      '<button type="button" class="cookie-btn cookie-btn--primary" data-cookie-accept-all>' + consentText.accept + '</button></div></div>';
     document.body.appendChild(modal);
   }
 
