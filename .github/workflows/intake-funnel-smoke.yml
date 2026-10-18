@@ -89,6 +89,12 @@ jobs:
           SEND_TEST_LEAD: ${{ inputs.send_test_lead && '1' || '0' }}
         run: node scripts/deployed_intake_smoke.mjs
 
+      - name: Production cache freshness (read-only, informational)
+        if: always()
+        env:
+          SITE_URL: https://thousandoaksinjury.com
+        run: node scripts/cache_freshness_probe.mjs
+
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
