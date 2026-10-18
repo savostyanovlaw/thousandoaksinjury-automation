@@ -87,6 +87,9 @@ const requestedEngines = (process.env.BROWSER_ENGINES || Object.keys(availableEn
             values,
           };
         });
+        // Let the reveal transition finish so the click lands on the settled button (WebKit flake).
+        await form.locator('button[type="submit"]').scrollIntoViewIfNeeded();
+        await page.evaluate(() => Promise.all(document.getAnimations().map(animation => animation.finished.catch(() => null))));
         await form.locator('button[type="submit"]').click();
         try {
           await page.locator('[data-form-status]').getByText(/Thank you|Спасибо/).waitFor({ timeout: 15000 });
