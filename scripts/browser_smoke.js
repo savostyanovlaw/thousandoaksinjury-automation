@@ -1,4 +1,9 @@
 const { chromium, firefox, webkit } = require('playwright');
+process.on('unhandledRejection', error => {
+  if (process.env.GITHUB_ACTIONS) console.log(`::error title=${require('path').basename(__filename)} crashed::${String(error && error.stack || error).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A').slice(0, 1500)}`);
+  console.error(error);
+  process.exit(1);
+});
 const fs = require('fs');
 const path = require('path');
 
@@ -16,7 +21,9 @@ const routes = [
   ['not-found', '/404.html'],
 ];
 const widths = [360, 390, 768, 1024, 1440];
-const engines = { chromium, firefox, webkit };
+const availableEngines = { chromium, firefox, webkit };
+const engines = Object.fromEntries((process.env.BROWSER_ENGINES || Object.keys(availableEngines).join(','))
+  .split(',').map(name => name.trim()).filter(Boolean).map(name => [name, availableEngines[name]]));
 const outDir = path.join(process.cwd(), 'artifacts', 'browser');
 fs.mkdirSync(outDir, { recursive: true });
 
@@ -29,7 +36,8 @@ fs.mkdirSync(outDir, { recursive: true });
         const page = await browser.newPage({ viewport: { width, height: 900 } });
         const consoleErrors = [];
         page.on('console', msg => {
-          if (msg.type() === 'error') consoleErrors.push(msg.text());
+          // Third-party embeds (YouTube) intermittently log browser permission-policy notices; they are not site errors.
+          if (msg.type() === 'error' && !/^Permissions policy violation:/.test(msg.text())) consoleErrors.push(msg.text());
         });
         page.on('pageerror', err => consoleErrors.push(err.message));
         const response = await page.goto(`${base}${route}`, { waitUntil: 'networkidle' });
@@ -52,6 +60,11 @@ fs.mkdirSync(outDir, { recursive: true });
 
   if (failures.length) {
     console.error(JSON.stringify(failures, null, 2));
+    if (process.env.GITHUB_ACTIONS) {
+      for (const failure of failures.slice(0, 10)) {
+        console.log(`::error title=${require('path').basename(__filename)}::${JSON.stringify(failure).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A').slice(0, 900)}`);
+      }
+    }
     process.exit(1);
   }
   console.log(`Browser smoke passed for ${Object.keys(engines).length} engines, ${routes.length} routes, and ${widths.length} viewport widths.`);

@@ -28,6 +28,7 @@
   ]
 }
 </script>
+<script>document.documentElement.classList.add('js-reveal');setTimeout(function(){if(!window.toiRevealReady)document.documentElement.classList.remove('js-reveal')},3000)</script>
 </head>
 <body>
 <a class="skip-link" href="#main">Перейти к основному содержанию</a>
@@ -90,14 +91,16 @@
     <p class="measure">Фирма рассматривает дела о личных травмах по законодательству Калифорнии, включая автомобильные аварии и иные случаи, когда халатность другого лица привела к травме. Вы общаетесь непосредственно с адвокатом, который отвечает за ваше дело.</p>
     <div class="practice-editorial">
       <div class="practice-list" aria-label="Направления практики">
-        <a href="/car-accident-lawyer/">Автомобильные аварии</a>
-        <a href="#contact">Аварии на мотоциклах</a>
+        <a href="/car-accident-lawyer/" hreflang="en">Автомобильные аварии</a>
+        <a href="/motorcycle-accident-lawyer/" hreflang="en">Аварии на мотоциклах</a>
         <a href="#contact">Травмы пешеходов</a>
-        <a href="#contact">Травмы на чужой территории</a>
-        <a href="#contact">Смерть по вине другого лица</a>
+        <a href="/slip-and-fall-lawyer/" hreflang="en">Травмы на чужой территории</a>
+        <a href="/dog-bite-lawyer/" hreflang="en">Укусы собак</a>
+        <a href="/wrongful-death-lawyer/" hreflang="en">Смерть по вине другого лица</a>
       </div>
       <div class="practice-visual" aria-hidden="true"></div>
     </div>
+    <p class="fine-print">Подробные страницы по видам дел пока доступны на английском языке. Консультация с адвокатом проводится на русском.</p>
   </div>
 </section>
 
@@ -174,18 +177,18 @@
       <p class="measure">Позвоните или напишите по электронной почте. Запросы рассматриваются напрямую фирмой; отправка сообщения сама по себе не создаёт отношения адвокат–клиент.</p>
       <p><strong>Телефон:</strong> <a href="tel:+18182138798">(818) 213-8798</a><br><strong>Электронная почта:</strong> <a href="mailto:attorney@savostyanovlaw.com">attorney@savostyanovlaw.com</a></p>
     </div>
-    <form data-form-integration="pending" aria-describedby="form-status">
-      <label>Имя и фамилия<input type="text" name="name" autocomplete="name" required></label>
-      <label>Телефон<input type="tel" name="phone" autocomplete="tel" required></label>
-      <label>Электронная почта<input type="email" name="email" autocomplete="email" required></label>
-      <label>Кратко опишите ситуацию<textarea name="message" required></textarea></label>
-      <button class="btn btn-primary" type="button" aria-disabled="true">Запросить бесплатную консультацию</button>
-      <p class="fine-print" id="form-status">Онлайн-форма будет активирована только после проверки защищённого механизма отправки. Сейчас свяжитесь с фирмой по телефону или электронной почте.</p>
-    </form>
+    <form data-form-integration="pending" aria-describedby="form-status" action="/api/case-review" method="post">
+      <label>Имя и фамилия<input type="text" name="name" autocomplete="name" maxlength="120" required></label>
+      <label>Телефон<input type="tel" name="phone" autocomplete="tel" maxlength="60" required></label>
+      <label>Электронная почта (необязательно)<input type="email" name="email" autocomplete="email" maxlength="254"></label>
+      <label>Кратко опишите ситуацию<textarea name="message" maxlength="6000" required></textarea></label>
+      <button class="btn btn-primary" type="submit" aria-describedby="form-status">Запросить бесплатную консультацию</button>
+      <p class="fine-print" id="form-status">Защищённая онлайн-форма. Не используйте её, если срок может истечь до ответа фирмы; позвоните по номеру (818) 213-8798.</p>
+    <input type="hidden" name="language" value="ru"><div class="hp-field" aria-hidden="true" style="position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden"><label>Website<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div></form>
   </div>
 </section>
 </main>
-<div class="mobile-action-bar" aria-label="Quick contact"><a href="tel:+18182138798">Позвонить</a><a href="#contact">Бесплатная консультация</a></div>
+<div class="mobile-action-bar" role="region" aria-label="Быстрая связь"><a href="tel:+18182138798">Позвонить <span class="mobile-action-number">(818) 213-8798</span></a><a href="#contact">Бесплатная консультация</a></div>
 <footer class="site-footer">
   <div class="wrap">
     <strong>Savostyanov Law Corporation</strong><br>

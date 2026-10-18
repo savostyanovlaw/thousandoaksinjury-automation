@@ -1,0 +1,99 @@
+name: Intake Funnel Smoke (deployed)
+
+# Tests the DEPLOYED site, not the repository files:
+#  - pull requests: the Cloudflare Pages branch preview, once Cloudflare reports it built;
+#  - pushes to main: production, once Cloudflare reports the production build;
+#  - daily: production, to catch a broken form or a lost RESEND_API_KEY (issue #12);
+#  - manual: any URL, optionally sending ONE labeled synthetic lead.
+# No email is sent unless send_test_lead is explicitly chosen on a manual run.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 15 * * *'
+  workflow_dispatch:
+    inputs:
+      site_url:
+        description: 'Deployed URL to test'
+        required: false
+        default: 'https://thousandoaksinjury.com'
+      send_test_lead:
+        description: 'Send ONE clearly labeled synthetic lead to the firm inbox'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  statuses: read
+  checks: read
+
+concurrency:
+  group: intake-funnel-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Wait for Cloudflare Pages build and pick target URL
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          HEAD_REF: ${{ github.head_ref }}
+          INPUT_URL: ${{ inputs.site_url }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "workflow_dispatch" ]; then echo "url=$INPUT_URL" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [ "$EVENT" = "schedule" ]; then echo "url=https://thousandoaksinjury.com" >> "$GITHUB_OUTPUT"; exit 0; fi
+          state=pending
+          for i in $(seq 1 60); do
+            # Cloudflare reports as a check run (older builds used a commit status).
+            state=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs" \
+              --jq '[.check_runs[] | select(.name=="Cloudflare Pages: thousandoaksinjury")][0] | if . == null then "pending" elif .status != "completed" then "pending" else .conclusion end')
+            if [ "$state" = "pending" ]; then
+              legacy=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/statuses" \
+                --jq '[.[] | select(.context=="Cloudflare Pages: thousandoaksinjury")][0].state // "pending"')
+              [ "$legacy" != "pending" ] && state=$legacy
+            fi
+            echo "Cloudflare Pages build: $state"
+            if [ "$state" = "success" ]; then break; fi
+            if [ "$state" = "failure" ] || [ "$state" = "error" ] || [ "$state" = "cancelled" ]; then echo "Cloudflare build failed"; exit 1; fi
+            sleep 15
+          done
+          if [ "$state" != "success" ]; then echo "Timed out waiting for Cloudflare"; exit 1; fi
+          if [ "$EVENT" = "pull_request" ]; then
+            slug=$(echo "$HEAD_REF" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g' | cut -c1-28 | sed -E 's/-+$//')
+            echo "url=https://${slug}.thousandoaksinjury.pages.dev" >> "$GITHUB_OUTPUT"
+          else
+            sleep 30  # production alias propagation
+            echo "url=https://thousandoaksinjury.com" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Deployed intake smoke
+        env:
+          SITE_URL: ${{ steps.target.outputs.url }}
+          SEND_TEST_LEAD: ${{ inputs.send_test_lead && '1' || '0' }}
+        run: node scripts/deployed_intake_smoke.mjs
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployed-intake-smoke
+          path: artifacts/deployed-smoke/
+          if-no-files-found: ignore
+          retention-days: 14
