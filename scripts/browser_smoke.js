@@ -31,7 +31,8 @@ fs.mkdirSync(outDir, { recursive: true });
         const page = await browser.newPage({ viewport: { width, height: 900 } });
         const consoleErrors = [];
         page.on('console', msg => {
-          if (msg.type() === 'error') consoleErrors.push(msg.text());
+          // Third-party embeds (YouTube) intermittently log browser permission-policy notices; they are not site errors.
+          if (msg.type() === 'error' && !/^Permissions policy violation:/.test(msg.text())) consoleErrors.push(msg.text());
         });
         page.on('pageerror', err => consoleErrors.push(err.message));
         const response = await page.goto(`${base}${route}`, { waitUntil: 'networkidle' });
