@@ -1,4 +1,9 @@
 const { chromium, firefox, webkit } = require('playwright');
+process.on('unhandledRejection', error => {
+  if (process.env.GITHUB_ACTIONS) console.log(`::error title=${require('path').basename(__filename)} crashed::${String(error && error.stack || error).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A').slice(0, 1500)}`);
+  console.error(error);
+  process.exit(1);
+});
 const fs = require('fs');
 const path = require('path');
 
