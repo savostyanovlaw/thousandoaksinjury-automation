@@ -43,5 +43,19 @@ for (const row of rows) {
   console.log(`${row.identical_to_cache_busted && !row.old_form_text ? 'FRESH' : 'STALE'}  ${row.path}  plain="${row.title_plain}"  fresh="${row.title_fresh}"  ${JSON.stringify(row.headers)}`);
 }
 console.log(`\n${BASE}: ${rows.length - stale}/${rows.length} pages fresh.`);
+
+/* www host: should 301 to the apex with path and query preserved. */
+try {
+  const www = BASE.replace('://', '://www.');
+  const res = await fetch(`${www}/newbury-park/?probe=1`, { redirect: 'manual', signal: AbortSignal.timeout(30000) });
+  const location = res.headers.get('location');
+  const ok = res.status === 301 && location === `${BASE}/newbury-park/?probe=1`;
+  const line = `www host: HTTP ${res.status}${location ? ' -> ' + location : ''} server=${res.headers.get('server')}`;
+  console.log(line);
+  if (process.env.GITHUB_ACTIONS) console.log(`::${ok ? 'notice' : 'warning'} title=WWW ${ok ? 'OK' : 'NOT REDIRECTING'}::${line}`);
+} catch (error) {
+  console.log(`www host: request failed (${error.name}: ${error.message})`);
+  if (process.env.GITHUB_ACTIONS) console.log(`::warning title=WWW NOT REDIRECTING::request failed (${error.name}: ${error.message})`);
+}
 if (stale && process.env.GITHUB_ACTIONS) console.log(`::warning title=Stale HTML::${stale} page(s) on ${BASE} differ from a cache-busted fetch; see job log for cache headers.`);
 process.exit(stale && process.env.STRICT === '1' ? 1 : 0);
