@@ -88,7 +88,19 @@ const requestedEngines = (process.env.BROWSER_ENGINES || Object.keys(availableEn
           };
         });
         await form.locator('button[type="submit"]').click();
-        await page.locator('[data-form-status]').getByText(/Thank you|Спасибо/).waitFor();
+        try {
+          await page.locator('[data-form-status]').getByText(/Thank you|Спасибо/).waitFor({ timeout: 15000 });
+        } catch (error) {
+          const state = await page.evaluate(() => {
+            const f = document.querySelector('form[data-case-review-form]');
+            const s = document.querySelector('[data-form-status]');
+            return { url: location.href, status: s && s.textContent, integration: f && f.getAttribute('data-form-integration'),
+              invalid: f ? Array.from(f.elements).filter(e => e.validity && !e.validity.valid).map(e => e.name + ':' + e.validationMessage) : null };
+          }).catch(e => ({ evalError: String(e) }));
+          failures.push({ engineName, route, width, stage: 'success-message', submissionCount, state, contract });
+          await page.close();
+          continue;
+        }
         await form.locator('[name="name"]').fill('Mobile QA');
         await form.locator('[name="phone"]').fill('invalid');
         await form.locator('[name="email"]').fill('mobile.qa@example.com');
