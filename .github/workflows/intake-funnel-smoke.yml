@@ -29,6 +29,7 @@ on:
 permissions:
   contents: read
   statuses: read
+  checks: read
 
 concurrency:
   group: intake-funnel-smoke-${{ github.ref }}
@@ -55,11 +56,17 @@ jobs:
           if [ "$EVENT" = "schedule" ]; then echo "url=https://thousandoaksinjury.com" >> "$GITHUB_OUTPUT"; exit 0; fi
           state=pending
           for i in $(seq 1 60); do
-            state=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/statuses" \
-              --jq '[.[] | select(.context=="Cloudflare Pages: thousandoaksinjury")][0].state // "pending"')
+            # Cloudflare reports as a check run (older builds used a commit status).
+            state=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs" \
+              --jq '[.check_runs[] | select(.name=="Cloudflare Pages: thousandoaksinjury")][0] | if . == null then "pending" elif .status != "completed" then "pending" else .conclusion end')
+            if [ "$state" = "pending" ]; then
+              legacy=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/statuses" \
+                --jq '[.[] | select(.context=="Cloudflare Pages: thousandoaksinjury")][0].state // "pending"')
+              [ "$legacy" != "pending" ] && state=$legacy
+            fi
             echo "Cloudflare Pages build: $state"
             if [ "$state" = "success" ]; then break; fi
-            if [ "$state" = "failure" ] || [ "$state" = "error" ]; then echo "Cloudflare build failed"; exit 1; fi
+            if [ "$state" = "failure" ] || [ "$state" = "error" ] || [ "$state" = "cancelled" ]; then echo "Cloudflare build failed"; exit 1; fi
             sleep 15
           done
           if [ "$state" != "success" ]; then echo "Timed out waiting for Cloudflare"; exit 1; fi

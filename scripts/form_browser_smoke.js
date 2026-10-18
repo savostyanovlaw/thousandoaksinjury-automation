@@ -117,6 +117,11 @@ const requestedEngines = (process.env.BROWSER_ENGINES || Object.keys(availableEn
   }
   if (failures.length) {
     console.error(JSON.stringify(failures, null, 2));
+    if (process.env.GITHUB_ACTIONS) {
+      for (const failure of failures.slice(0, 10)) {
+        console.log(`::error title=${require('path').basename(__filename)}::${JSON.stringify(failure).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A').slice(0, 900)}`);
+      }
+    }
     process.exit(1);
   }
   console.log(`Form smoke passed for ${requestedEngines.length} engines, ${routes.length} routes, and ${widths.length} viewport widths.`);

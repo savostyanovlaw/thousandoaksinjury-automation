@@ -54,6 +54,11 @@ fs.mkdirSync(outDir, { recursive: true });
 
   if (failures.length) {
     console.error(JSON.stringify(failures, null, 2));
+    if (process.env.GITHUB_ACTIONS) {
+      for (const failure of failures.slice(0, 10)) {
+        console.log(`::error title=${require('path').basename(__filename)}::${JSON.stringify(failure).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A').slice(0, 900)}`);
+      }
+    }
     process.exit(1);
   }
   console.log(`Browser smoke passed for ${Object.keys(engines).length} engines, ${routes.length} routes, and ${widths.length} viewport widths.`);
