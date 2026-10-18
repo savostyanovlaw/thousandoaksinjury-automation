@@ -10,6 +10,16 @@ const BASE = (process.env.SITE_URL || 'https://thousandoaksinjury.com').replace(
 const PATHS = (process.env.PROBE_PATHS || '/,/newbury-park/,/westlake-village/,/agoura-hills/,/car-accident-lawyer/,/dog-bite-lawyer/,/ru/').split(',');
 const HEADERS = ['cf-cache-status', 'age', 'cache-control', 'cdn-cache-control', 'cloudflare-cdn-cache-control', 'etag', 'last-modified', 'server'];
 
+/* Cloudflare email obfuscation and similar per-response tokens differ on every
+   request; strip them so only real content differences count. */
+function normalize(html) {
+  return html
+    .replace(/data-cfemail="[0-9a-f]+"/g, 'data-cfemail=""')
+    .replace(/email-protection#[0-9a-f]+/g, 'email-protection#')
+    .replace(/<script[^>]*email-decode[^>]*><\/script>/g, '')
+    .replace(/\s+/g, ' ');
+}
+
 function title(html) {
   const m = /<title>([^<]*)<\/title>/.exec(html);
   return m ? m[1] : '(no title)';
@@ -22,13 +32,14 @@ for (const p of PATHS) {
   const plainHtml = await plain.text();
   const busted = await fetch(`${BASE}${p}?cb=${Date.now()}`, { headers: { 'cache-control': 'no-cache', 'user-agent': 'Mozilla/5.0 (cache-freshness-probe)' } });
   const bustedHtml = await busted.text();
-  const same = plainHtml === bustedHtml;
+  const same = normalize(plainHtml) === normalize(bustedHtml);
   const oldForm = /will be enabled only after|submission is loading/.test(plainHtml);
   if (!same || oldForm) stale += 1;
   const headers = Object.fromEntries(HEADERS.map(h => [h, plain.headers.get(h)]).filter(([, v]) => v !== null));
   rows.push({ path: p, status: plain.status, identical_to_cache_busted: same, old_form_text: oldForm, title_plain: title(plainHtml), title_fresh: title(bustedHtml), headers });
 }
 for (const row of rows) {
+  if (process.env.GITHUB_ACTIONS) console.log(`::notice title=${row.identical_to_cache_busted && !row.old_form_text ? 'FRESH' : 'STALE'} ${row.path}::plain="${row.title_plain}" fresh="${row.title_fresh}" oldForm=${row.old_form_text} ${JSON.stringify(row.headers)}`);
   console.log(`${row.identical_to_cache_busted && !row.old_form_text ? 'FRESH' : 'STALE'}  ${row.path}  plain="${row.title_plain}"  fresh="${row.title_fresh}"  ${JSON.stringify(row.headers)}`);
 }
 console.log(`\n${BASE}: ${rows.length - stale}/${rows.length} pages fresh.`);
