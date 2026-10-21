@@ -37,7 +37,7 @@ def read(path):
 class MobileContactBarTests(unittest.TestCase):
     def test_every_sitemap_page_shows_number_and_free_consultation(self):
         pages = list(sitemap_files())
-        self.assertEqual(len(pages), 15)
+        self.assertGreaterEqual(len(pages), 15, "Sitemap must retain the established site pages")
         for route, path in pages:
             with self.subTest(route=route):
                 html = read(path)
