@@ -1,0 +1,49 @@
+name: Backdrop Recorder Android
+
+on:
+  pull_request:
+    paths:
+      - 'apps/backdrop-recorder/**'
+      - '.github/workflows/backdrop-recorder-android.yml'
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Bundle offline selfie segmentation model
+        run: |
+          mkdir -p apps/backdrop-recorder/app/src/main/assets
+          curl --fail --location --retry 3 \
+            https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite \
+            --output apps/backdrop-recorder/app/src/main/assets/selfie_segmenter.tflite
+          test -s apps/backdrop-recorder/app/src/main/assets/selfie_segmenter.tflite
+
+      - name: Run unit tests
+        run: gradle -p apps/backdrop-recorder testDebugUnitTest --stacktrace
+
+      - name: Build debug APK
+        run: gradle -p apps/backdrop-recorder assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: backdrop-recorder-debug-apk
+          path: apps/backdrop-recorder/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
