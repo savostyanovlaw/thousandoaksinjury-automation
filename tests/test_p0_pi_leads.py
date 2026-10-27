@@ -84,6 +84,7 @@ class InternalLinkTests(unittest.TestCase):
         self.assertEqual(html.count('id="serious-injuries"'), 1)
         self.assertIn("Spinal cord injury and paralysis", html)
         self.assertIn("Traumatic brain injuries", html)
+        self.assertIn("Amputation and limb-loss injuries", html)
         for target in ("/car-accident-lawyer/", "/motorcycle-accident-lawyer/",
                        "/slip-and-fall-lawyer/"):
             with self.subTest(target=target):
