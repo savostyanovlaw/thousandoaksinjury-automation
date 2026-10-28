@@ -92,7 +92,7 @@ class InternalLinkTests(unittest.TestCase):
 
     def test_russian_practice_list_uses_existing_pages(self):
         html = read(SITE / "ru" / "index.html")
-        for target in PRACTICE_PAGES:
+        for target in PRACTICE_PAGES + ("/rideshare-accident-lawyer/", "/delivery-driver-injury-lawyer/"):
             with self.subTest(target=target):
                 self.assertIn(f'href="{target}" hreflang="en"', html)
 
