@@ -33,6 +33,7 @@ const results = [];
 function check(name, ok, detail) {
   results.push({ name, ok: !!ok, detail });
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${ok ? '' : '  ' + JSON.stringify(detail)}`);
+  if (!ok && process.env.GITHUB_ACTIONS) console.log(`::error title=Smoke FAIL::${name} ${JSON.stringify(detail).slice(0, 900).replace(/[\r\n%]/g, ' ')}`);
 }
 
 async function get(pathname, init) {
