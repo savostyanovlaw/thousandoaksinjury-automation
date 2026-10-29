@@ -60,7 +60,30 @@ for (const p of ['/thank-you/', '/case-review-error/']) {
   check(`status page ${p}`, page.status === 200 && page.text.includes('noindex') && page.text.includes('tel:+18182138798'), { status: page.status });
 }
 const robots = await get('/robots.txt');
-check('robots.txt', robots.status === 200 && robots.text.includes('Sitemap: https://thousandoaksinjury.com/sitemap.xml') && !/Disallow:\s*\/\s*$/m.test(robots.text), robots.text);
+// Group robots.txt rules by user-agent. Cloudflare's managed robots.txt can add
+// "Disallow: /" for AI-training crawlers; that is a policy choice, not a search
+// outage. Fail only when the general rules or the main search crawlers are blocked.
+const robotsGroups = [];
+let robotsCurrent = null, robotsLastWasAgent = false;
+for (const raw of robots.text.split(/\r?\n/)) {
+  const line = raw.replace(/#.*/, '').trim();
+  const m = line.match(/^([A-Za-z-]+)\s*:\s*(.*)$/);
+  if (!m) continue;
+  const key = m[1].toLowerCase(), value = m[2].trim();
+  if (key === 'user-agent') {
+    if (!robotsLastWasAgent || !robotsCurrent) { robotsCurrent = { agents: [], disallowAll: false }; robotsGroups.push(robotsCurrent); }
+    robotsCurrent.agents.push(value.toLowerCase());
+    robotsLastWasAgent = true;
+  } else {
+    robotsLastWasAgent = false;
+    if (robotsCurrent && key === 'disallow' && value === '/') robotsCurrent.disallowAll = true;
+  }
+}
+const robotsBlockedAgents = robotsGroups.filter(g => g.disallowAll).flatMap(g => g.agents);
+const searchBlocked = robotsBlockedAgents.filter(a => ['*', 'googlebot', 'bingbot'].includes(a));
+if (robotsBlockedAgents.length && process.env.GITHUB_ACTIONS) console.log(`::notice title=robots.txt blocked agents::${robotsBlockedAgents.join(', ')}`);
+check('robots.txt', robots.status === 200 && robots.text.includes('Sitemap: https://thousandoaksinjury.com/sitemap.xml') && searchBlocked.length === 0,
+  { status: robots.status, hasSitemap: robots.text.includes('Sitemap: https://thousandoaksinjury.com/sitemap.xml'), searchBlocked, blockedAgents: robotsBlockedAgents });
 
 // 2. Endpoint is deployed and configured (no email sent).
 const healthRes = await get('/api/intake-health');
