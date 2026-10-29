@@ -1,8 +1,8 @@
 name: Client Acquisition CEO
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '20 16 * * *'
+  # schedule paused 2026-10-29: no data source feeds input.json, so scheduled runs
+  # always reported zero findings. Re-enable once a real GSC/lead export is wired in.
   pull_request:
     paths:
       - 'scripts/client_acquisition_ceo.py'
