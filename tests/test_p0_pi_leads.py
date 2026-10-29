@@ -79,6 +79,18 @@ class InternalLinkTests(unittest.TestCase):
                 with self.subTest(city=city, target=target):
                     self.assertIn(f'href="{target}"', html)
 
+    def test_homepage_serious_injury_section_links_to_existing_claim_pages(self):
+        html = read(SITE / "index.html")
+        self.assertEqual(html.count('id="serious-injuries"'), 1)
+        self.assertIn("Spinal cord injury and paralysis", html)
+        self.assertIn("Traumatic brain injuries", html)
+        self.assertIn("Amputation and limb-loss injuries", html)
+        for target in ("/car-accident-lawyer/", "/motorcycle-accident-lawyer/",
+                       "/slip-and-fall-lawyer/"):
+            with self.subTest(target=target):
+                self.assertIn(f'href="{target}"', html)
+        self.assertIn(PHONE_HREF, html)
+
     def test_car_accident_page_has_local_section_and_related_links(self):
         html = read(SITE / "car-accident-lawyer" / "index.html")
         self.assertIn('id="thousand-oaks-crashes"', html)
@@ -90,9 +102,19 @@ class InternalLinkTests(unittest.TestCase):
         self.assertIn("<title>Thousand Oaks Car Accident Lawyer | Savostyanov Law</title>", html)
         self.assertRegex(html, r"<h1[^>]*>Thousand Oaks Car Accident Lawyer</h1>")
 
+    def test_motorcycle_page_links_to_distinct_vehicle_injury_guidance(self):
+        html = read(SITE / "motorcycle-accident-lawyer" / "index.html")
+        self.assertIn("Motorcycle crashes involving rideshare or delivery vehicles", html)
+        for target in ("/rideshare-accident-lawyer/", "/delivery-driver-injury-lawyer/"):
+            with self.subTest(target=target):
+                self.assertIn(f'href="{target}"', html)
+        self.assertIn(PHONE_HREF, html)
+        related = html.split("<h2>Related personal injury resources</h2>", 1)[1].split("</section>", 1)[0]
+        self.assertNotIn('href="/motorcycle-accident-lawyer/"', related)
+
     def test_russian_practice_list_uses_existing_pages(self):
         html = read(SITE / "ru" / "index.html")
-        for target in PRACTICE_PAGES:
+        for target in PRACTICE_PAGES + ("/rideshare-accident-lawyer/", "/delivery-driver-injury-lawyer/"):
             with self.subTest(target=target):
                 self.assertIn(f'href="{target}" hreflang="en"', html)
 
