@@ -79,6 +79,18 @@ class InternalLinkTests(unittest.TestCase):
                 with self.subTest(city=city, target=target):
                     self.assertIn(f'href="{target}"', html)
 
+    def test_homepage_serious_injury_section_links_to_existing_claim_pages(self):
+        html = read(SITE / "index.html")
+        self.assertEqual(html.count('id="serious-injuries"'), 1)
+        self.assertIn("Spinal cord injury and paralysis", html)
+        self.assertIn("Traumatic brain injuries", html)
+        self.assertIn("Amputation and limb-loss injuries", html)
+        for target in ("/car-accident-lawyer/", "/motorcycle-accident-lawyer/",
+                       "/slip-and-fall-lawyer/"):
+            with self.subTest(target=target):
+                self.assertIn(f'href="{target}"', html)
+        self.assertIn(PHONE_HREF, html)
+
     def test_car_accident_page_has_local_section_and_related_links(self):
         html = read(SITE / "car-accident-lawyer" / "index.html")
         self.assertIn('id="thousand-oaks-crashes"', html)
