@@ -6,6 +6,9 @@ compliance problem needs fixing (see `AGENTS.md`).
 
 | Released | Page | Change | PR |
 | --- | --- | --- | --- |
+| 2026-10-31 | /, /ru/ | Removed internal SEO instructions; polished EN/RU homepage copy | #204 |
+| 2026-10-30 | /car-accident-lawyer/ | Clarified page scope; link to PI overview | #203 |
+| 2026-10-30 | / | Contextual link to car accident page | #203 |
 | 2026-10-29 | /, /agoura-hills/, /camarillo/, /newbury-park/, /oak-park/, /simi-valley/, /westlake-village/, /ru/ | Rideshare/delivery links, titles, slip-and-fall and serious-injury sections | #195 (batch of #182–#188, #192) |
 | 2026-10-29 | /car-accident-lawyer/ | DMV SR-1 reporting guidance | #195 (#194) |
 | 2026-10-29 | /motorcycle-accident-lawyer/, /slip-and-fall-lawyer/, /wrongful-death-lawyer/, /dog-bite-lawyer/ | Related links, delivery-worker falls, wrongful-death FAQ and deadlines | #195 (#187, #188, #191) |
