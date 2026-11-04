@@ -6,6 +6,8 @@ compliance problem needs fixing (see `AGENTS.md`).
 
 | Released | Page | Change | PR |
 | --- | --- | --- | --- |
+| 2026-11-03 | /crash-court/ | New interactive Crash Court #1 page (vote A/B, clickable case-review CTA) | #206 |
+| 2026-11-03 | /videos/ | Link card to /crash-court/ | #206 |
 | 2026-10-31 | /, /ru/ | Removed internal SEO instructions; polished EN/RU homepage copy | #204 |
 | 2026-10-30 | /car-accident-lawyer/ | Clarified page scope; link to PI overview | #203 |
 | 2026-10-30 | / | Contextual link to car accident page | #203 |
